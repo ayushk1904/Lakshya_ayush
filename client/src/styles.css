@@ -362,9 +362,9 @@ button {
 
 .hero-content {
   width: min(100%, 980px);
-  margin: 0;
+  margin: 0 auto;
   display: grid;
-  justify-items: start;
+  justify-items: center;
 }
 
 .eyebrow,
@@ -393,6 +393,8 @@ button {
 .hero-panel h1 {
   max-width: 12ch;
   color: var(--text);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .hero-copy,
