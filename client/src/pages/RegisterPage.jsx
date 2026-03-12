@@ -7,7 +7,7 @@ import BrandLogo from "../components/BrandLogo";
 function RegisterPage() {
   const navigate = useNavigate();
   const { register } = useAuth();
-  const [form, setForm] = useState({ name: "Ayush", email: "student@lakshya.ai", password: "password123" });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
