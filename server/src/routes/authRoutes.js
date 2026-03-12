@@ -4,7 +4,6 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
 const { signToken } = require("../utils/auth");
-const { mockUser } = require("../utils/mockData");
 
 const router = express.Router();
 
@@ -12,6 +11,15 @@ function normalizeEmail(email) {
   return String(email || "")
     .trim()
     .toLowerCase();
+}
+
+function ensureDatabaseReady(res) {
+  if (mongoose.connection.readyState === 1) {
+    return true;
+  }
+
+  res.status(503).json({ message: "Database unavailable. Start MongoDB and try again." });
+  return false;
 }
 
 router.post("/register", async (req, res) => {
@@ -22,12 +30,8 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ message: "Name, email, and password are required" });
   }
 
-  if (mongoose.connection.readyState !== 1) {
-    mockUser.name = name;
-    mockUser.email = email;
-    mockUser.password = await bcrypt.hash(password, 10);
-    const token = signToken(mockUser);
-    return res.status(201).json({ token, user: { _id: mockUser._id, name, email } });
+  if (!ensureDatabaseReady(res)) {
+    return;
   }
 
   const existingUser = await User.findOne({ email });
@@ -49,15 +53,8 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ message: "Email and password are required" });
   }
 
-  if (mongoose.connection.readyState !== 1) {
-    const mockPassword = typeof mockUser.password === "string" ? mockUser.password : "";
-    const isMatch = mockPassword ? await bcrypt.compare(password, mockPassword) : false;
-    if (email !== mockUser.email || !isMatch) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
-
-    const token = signToken(mockUser);
-    return res.json({ token, user: { _id: mockUser._id, name: mockUser.name, email: mockUser.email } });
+  if (!ensureDatabaseReady(res)) {
+    return;
   }
 
   const user = await User.findOne({ email });

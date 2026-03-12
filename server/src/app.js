@@ -1,5 +1,6 @@
 const cors = require("cors");
 const express = require("express");
+const mongoose = require("mongoose");
 const authRoutes = require("./routes/authRoutes");
 const chatRoomRoutes = require("./routes/chatRoomRoutes");
 const examSessionRoutes = require("./routes/examSessionRoutes");
@@ -14,6 +15,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "lakshya-server",
+    database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     message: "Lakshya backend is ready for MERN feature integration."
   });
 });

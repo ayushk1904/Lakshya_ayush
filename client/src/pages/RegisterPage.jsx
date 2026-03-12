@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import ThemeSwitcher from "../components/ThemeSwitcher";
 import { useAuth } from "../context/AuthContext";
 import BrandLogo from "../components/BrandLogo";
 
@@ -27,6 +28,9 @@ function RegisterPage() {
 
   return (
     <div className="auth-page">
+      <div className="auth-toolbar">
+        <ThemeSwitcher />
+      </div>
       <form className="auth-card" onSubmit={handleSubmit}>
         <div className="brand-block">
           <BrandLogo />

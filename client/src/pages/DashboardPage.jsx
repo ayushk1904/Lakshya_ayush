@@ -15,6 +15,8 @@ const quickActions = [
 function DashboardPage() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState(fallbackDashboard);
+  const completedSubjects = dashboard.studyProgress.filter((subject) => subject.value >= 80).length;
+  const nextExam = dashboard.upcomingExams[0];
 
   useEffect(() => {
     Promise.allSettled([studyPlanApi.today(), examApi.upcoming()]).then(([planResult, examsResult]) => {
@@ -28,6 +30,32 @@ function DashboardPage() {
 
   return (
     <div className="screen">
+      <section className="mission-hero panel">
+        <div>
+          <p className="eyebrow">Daily mission</p>
+          <h2>{user?.name || "Student"}, lock in your next high-impact session.</h2>
+          <p>
+            {nextExam
+              ? `Your nearest exam is ${nextExam.title}. Use today to finish strong topics and remove weak spots before the date closes in.`
+              : "Start with the planner, then move into tests or revision rooms to build momentum for the day."}
+          </p>
+        </div>
+        <div className="mission-metrics">
+          <article>
+            <strong>{completedSubjects}</strong>
+            <span>subjects above 80%</span>
+          </article>
+          <article>
+            <strong>{dashboard.todayPlan.length}</strong>
+            <span>tasks scheduled today</span>
+          </article>
+          <article>
+            <strong>{dashboard.upcomingExams.length}</strong>
+            <span>upcoming exam windows</span>
+          </article>
+        </div>
+      </section>
+
       <div className="screen-header">
         <div>
           <h1>Welcome back, {user?.name || "Student"}!</h1>

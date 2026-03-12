@@ -1,11 +1,11 @@
 import {
   AlarmClock,
   CheckCheck,
+  Compass,
   FileText,
   LayoutDashboard,
   LineChart,
   Menu,
-  Moon,
   ShieldCheck,
   Sparkles,
   Users,
@@ -14,6 +14,7 @@ import {
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import BrandLogo from "./BrandLogo";
+import ThemeSwitcher from "./ThemeSwitcher";
 
 const navItems = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -27,16 +28,36 @@ const navItems = [
   { to: "/app/progress", label: "My Progress", icon: LineChart }
 ];
 
+const routeMeta = {
+  "/app/dashboard": { eyebrow: "Mission Control", title: "Dashboard" },
+  "/app/planner": { eyebrow: "Planning", title: "Study Planner" },
+  "/app/tests": { eyebrow: "Practice", title: "Practice Tests" },
+  "/app/explainer": { eyebrow: "Doubt Solving", title: "Concept Explainer" },
+  "/app/evaluator": { eyebrow: "Evaluation", title: "Answer Evaluator" },
+  "/app/hub": { eyebrow: "Collaboration", title: "Study Hub" },
+  "/app/proctor": { eyebrow: "Exam Mode", title: "Live AI Proctor" },
+  "/app/coach": { eyebrow: "Sprint Prep", title: "Last-Minute Coach" },
+  "/app/progress": { eyebrow: "Analytics", title: "My Progress" }
+};
+
 function AppLayout() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const currentRoute = routeMeta[pathname] || { eyebrow: "Lakshya", title: "Workspace" };
 
   return (
     <div className="app-shell">
+      <div className="shell-glow shell-glow-left" aria-hidden="true" />
+      <div className="shell-glow shell-glow-right" aria-hidden="true" />
       <aside className="sidebar">
         <div className="brand-block">
           <BrandLogo />
+        </div>
+
+        <div className="sidebar-intro">
+          <span className="sidebar-kicker">Focused prep stack</span>
+          <p>Planning, practice, collaboration, and exam control in one workspace.</p>
         </div>
 
         <nav className="sidebar-nav">
@@ -50,6 +71,16 @@ function AppLayout() {
             );
           })}
         </nav>
+
+        <div className="sidebar-card">
+          <div className="sidebar-card-icon">
+            <Compass size={18} />
+          </div>
+          <div>
+            <strong>Stay on track</strong>
+            <p>Use the planner first, then jump into tests and hub sessions.</p>
+          </div>
+        </div>
       </aside>
 
       <main className="workspace">
@@ -58,14 +89,19 @@ function AppLayout() {
             <button className="menu-button" type="button" aria-label="Toggle navigation">
               <Menu size={18} />
             </button>
-            <BrandLogo compact />
+            <div className="topbar-copy">
+              <span>{currentRoute.eyebrow}</span>
+              <strong>{currentRoute.title}</strong>
+            </div>
           </div>
 
           <div className="topbar-right">
-            <button className="ghost-icon" type="button" aria-label="Theme">
-              <Moon size={18} />
-            </button>
+            <ThemeSwitcher />
             <div className="user-chip">
+              <div className="user-chip-meta">
+                <span>Welcome</span>
+                <strong>{user?.name || "Student"}</strong>
+              </div>
               <span>{user?.name || "Student"}</span>
               <button
                 className="text-button"
