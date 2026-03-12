@@ -7,12 +7,16 @@
     "dev": "node index.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
     "lakshya": "file:..",
-    "mongoose": "^8.18.1"
+    "mongoose": "^8.18.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^8.0.2",
+    "pdf-parse": "^2.4.5"
   }
 }

@@ -14,24 +14,25 @@ function buildFallbackPlan() {
   const today = getTodayDate();
   return {
     studyDate: today,
-    syllabusName: "Physics Final Revision.pdf",
+    syllabusName: "Study Plan.pdf",
     studyWindow: {
       startTime: "09:00",
       endTime: "18:00",
       breakMinutes: 15,
-      reminderLeadMinutes: 5
+      reminderLeadMinutes: 5,
     },
     summary: {
-      totalSessions: 4,
-      totalMinutes: 270,
-      focusMessage: "Start with the Physics Chapter 2 and focus on Thermodynamics topic first."
+      totalSessions: 2,
+      totalMinutes: 150,
+      focusMessage:
+        "Start with your first topic and focus deeply for this session.",
     },
     sessions: [
       {
         id: "fallback-1",
-        subject: "Physics",
-        chapter: "Chapter 2",
-        topic: "Thermodynamics",
+        subject: "Subject 1",
+        chapter: "Chapter 1",
+        topic: "Topic 1",
         durationMinutes: 90,
         priority: "high",
         startAt: `${today}T09:00:00.000Z`,
@@ -39,15 +40,16 @@ function buildFallbackPlan() {
         reminderAt: `${today}T08:55:00.000Z`,
         reminderLeadMinutes: 5,
         time: "9:00 AM - 10:30 AM",
-        task: "Physics - Chapter 2: Thermodynamics",
+        task: "Subject 1 - Chapter 1: Topic 1",
         tag: "high",
-        reminderText: "Start with the Physics Chapter 2 and focus on Thermodynamics topic first."
+        reminderText:
+          "Start with Subject 1, Chapter 1. Focus fully for this session.",
       },
       {
         id: "fallback-2",
-        subject: "Mathematics",
-        chapter: "Integration",
-        topic: "Definite integrals and standard forms",
+        subject: "Subject 2",
+        chapter: "Chapter 1",
+        topic: "Topic 2",
         durationMinutes: 60,
         priority: "medium",
         startAt: `${today}T11:00:00.000Z`,
@@ -55,11 +57,12 @@ function buildFallbackPlan() {
         reminderAt: `${today}T10:55:00.000Z`,
         reminderLeadMinutes: 5,
         time: "11:00 AM - 12:00 PM",
-        task: "Mathematics - Integration: Definite integrals and standard forms",
+        task: "Subject 2 - Chapter 1: Topic 2",
         tag: "medium",
-        reminderText: "Start with the Mathematics Integration and focus on definite integrals and standard forms first."
-      }
-    ]
+        reminderText:
+          "Now move to Subject 2, Topic 2. Stay focused for this block.",
+      },
+    ],
   };
 }
 
@@ -94,8 +97,8 @@ function normalizePlan(data) {
         time: item.time,
         task: item.task,
         tag: item.tag || "medium",
-        reminderText: item.reminderText || `It is time to begin ${item.task}.`
-      }))
+        reminderText: item.reminderText || `It is time to begin ${item.task}.`,
+      })),
     };
   }
 
@@ -112,7 +115,7 @@ function formatDateTime(value) {
     month: "short",
     day: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
   });
 }
 
@@ -123,19 +126,18 @@ function PlannerPage() {
   const [notificationEnabled, setNotificationEnabled] = useState(false);
   const [status, setStatus] = useState("");
   const [form, setForm] = useState({
-    syllabusName: "Physics Final Revision.pdf",
+    syllabusName: "Study Plan.pdf",
     studyDate: getTodayDate(),
     startTime: getLocalTime(7, 0),
     endTime: getLocalTime(21, 0),
     breakMinutes: 15,
     reminderLeadMinutes: 5,
     topicsInput: [
-      "Physics | Chapter 2 | Thermodynamics | 90 | high",
-      "Mathematics | Definite Integration | Formula revision and solved examples | 75 | medium",
-      "Chemistry | Organic Reactions | Name reactions and mechanisms | 60 | medium",
-      "Biology | Human Physiology | Diagrams and quick recall | 45 | low"
-    ].join("\n")
+      "Subject 1 | Chapter 1 | Topic 1 | 90 | high",
+      "Subject 2 | Chapter 1 | Topic 2 | 60 | medium",
+    ].join("\n"),
   });
+  const [pdfFile, setPdfFile] = useState(null);
   const timersRef = useRef([]);
 
   useEffect(() => {
@@ -144,9 +146,7 @@ function PlannerPage() {
     async function loadPlan() {
       try {
         const data = await studyPlanApi.today();
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         startTransition(() => {
           setPlan(normalizePlan(data));
@@ -186,9 +186,13 @@ function PlannerPage() {
       const timer = window.setTimeout(() => {
         speakReminder(session.reminderText);
 
-        if (notificationEnabled && "Notification" in window && Notification.permission === "granted") {
+        if (
+          notificationEnabled &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
           new Notification("Lakshya study reminder", {
-            body: session.reminderText
+            body: session.reminderText,
           });
         }
       }, triggerIn);
@@ -206,12 +210,25 @@ function PlannerPage() {
 
   const nextReminder = useMemo(() => {
     const now = Date.now();
-    return (plan.sessions || []).find((session) => new Date(session.reminderAt).getTime() > now) || null;
+    return (
+      (plan.sessions || []).find(
+        (session) => new Date(session.reminderAt).getTime() > now
+      ) || null
+    );
   }, [plan.sessions]);
 
   function updateField(event) {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function onPdfChange(event) {
+    const file = event.target.files?.[0] || null;
+    setPdfFile(file);
+    if (file) {
+      // Update syllabusName to match uploaded PDF name
+      setForm((current) => ({ ...current, syllabusName: file.name }));
+    }
   }
 
   function speakReminder(text) {
@@ -250,6 +267,8 @@ function PlannerPage() {
     setStatus("");
 
     try {
+      // If your backend needs the actual file, you would use FormData here.
+      // For now we send the PDF name as syllabusName (already set above).
       const data = await studyPlanApi.generate({
         syllabusName: form.syllabusName,
         studyDate: form.studyDate,
@@ -257,13 +276,15 @@ function PlannerPage() {
         endTime: form.endTime,
         breakMinutes: Number(form.breakMinutes),
         reminderLeadMinutes: Number(form.reminderLeadMinutes),
-        topicsInput: form.topicsInput
+        topicsInput: form.topicsInput,
       });
 
       startTransition(() => {
         setPlan(normalizePlan(data.plan));
       });
-      setStatus("Study plan generated. Enable voice reminders to hear scheduled prompts.");
+      setStatus(
+        "Study plan generated. Enable voice reminders to hear scheduled prompts."
+      );
     } catch {
       setPlan(buildFallbackPlan());
       setStatus("Planner API unavailable. Showing a fallback plan.");
@@ -277,7 +298,10 @@ function PlannerPage() {
       <div className="screen-header">
         <div>
           <h1>AI Study Planner</h1>
-          <p>Build a timed study schedule and get spoken reminders before each focus block starts.</p>
+          <p>
+            Build a timed study schedule and get spoken reminders before each
+            focus block starts.
+          </p>
         </div>
       </div>
 
@@ -288,28 +312,64 @@ function PlannerPage() {
           </div>
           <div className="planner-grid">
             <label className="planner-field planner-field-wide">
+              <span>Upload syllabus PDF</span>
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={onPdfChange}
+              />
+            </label>
+
+            <label className="planner-field planner-field-wide">
               <span>Syllabus or exam name</span>
-              <input name="syllabusName" value={form.syllabusName} onChange={updateField} placeholder="Physics final revision" />
+              <input
+                name="syllabusName"
+                value={form.syllabusName}
+                onChange={updateField}
+                placeholder="My Exam Syllabus.pdf"
+              />
             </label>
 
             <label className="planner-field">
               <span>Study date</span>
-              <input name="studyDate" type="date" value={form.studyDate} onChange={updateField} />
+              <input
+                name="studyDate"
+                type="date"
+                value={form.studyDate}
+                onChange={updateField}
+              />
             </label>
 
             <label className="planner-field">
               <span>Start time</span>
-              <input name="startTime" type="time" value={form.startTime} onChange={updateField} />
+              <input
+                name="startTime"
+                type="time"
+                value={form.startTime}
+                onChange={updateField}
+              />
             </label>
 
             <label className="planner-field">
               <span>End time</span>
-              <input name="endTime" type="time" value={form.endTime} onChange={updateField} />
+              <input
+                name="endTime"
+                type="time"
+                value={form.endTime}
+                onChange={updateField}
+              />
             </label>
 
             <label className="planner-field">
               <span>Break minutes</span>
-              <input name="breakMinutes" type="number" min="0" max="60" value={form.breakMinutes} onChange={updateField} />
+              <input
+                name="breakMinutes"
+                type="number"
+                min="0"
+                max="60"
+                value={form.breakMinutes}
+                onChange={updateField}
+              />
             </label>
 
             <label className="planner-field">
@@ -330,20 +390,29 @@ function PlannerPage() {
                 name="topicsInput"
                 value={form.topicsInput}
                 onChange={updateField}
-                rows={8}
-                placeholder="Physics | Chapter 2 | Thermodynamics | 90 | high"
+                rows={6}
+                placeholder="Subject | Chapter | Topic | Minutes | Priority"
               />
             </label>
           </div>
           <p className="planner-note">
-            Use one line per topic in this format: <strong>Subject | Chapter | Topic | Minutes | Priority</strong>.
+            Use one line per topic in this format:{" "}
+            <strong>Subject | Chapter | Topic | Minutes | Priority</strong>.
           </p>
           <div className="planner-actions">
-            <button className="primary-button" onClick={generatePlan} disabled={loading}>
+            <button
+              className="primary-button"
+              onClick={generatePlan}
+              disabled={loading}
+            >
               <Upload size={16} />
               {loading ? "Generating..." : "Generate Study Plan"}
             </button>
-            <button className="secondary-button" type="button" onClick={() => speakReminder(plan.summary?.focusMessage || "")}>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => speakReminder(plan.summary?.focusMessage || "")}
+            >
               <Mic size={16} />
               Test Voice Prompt
             </button>
@@ -362,10 +431,17 @@ function PlannerPage() {
               </div>
               <div>
                 <strong>Voice reminder</strong>
-                <p>Keep Lakshya open in your browser to hear spoken prompts before each session.</p>
+                <p>
+                  Keep Lakshya open in your browser to hear spoken prompts
+                  before each session.
+                </p>
               </div>
               <label className="planner-toggle">
-                <input type="checkbox" checked={voiceEnabled} onChange={(event) => setVoiceEnabled(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={voiceEnabled}
+                  onChange={(event) => setVoiceEnabled(event.target.checked)}
+                />
                 <span>{voiceEnabled ? "On" : "Off"}</span>
               </label>
             </div>
@@ -376,9 +452,16 @@ function PlannerPage() {
               </div>
               <div>
                 <strong>Browser notification</strong>
-                <p>Optional desktop reminder in addition to voice for the same study block.</p>
+                <p>
+                  Optional desktop reminder in addition to voice for the same
+                  study block.
+                </p>
               </div>
-              <button className="secondary-button compact" type="button" onClick={enableNotifications}>
+              <button
+                className="secondary-button compact"
+                type="button"
+                onClick={enableNotifications}
+              >
                 Allow Notifications
               </button>
             </div>
@@ -423,13 +506,18 @@ function PlannerPage() {
         </div>
         <div className="planner-timeline">
           {(plan.sessions || []).map((session) => (
-            <article className="planner-session-card" key={session.id || session.time}>
+            <article
+              className="planner-session-card"
+              key={session.id || session.time}
+            >
               <div className="planner-session-head">
                 <div>
                   <div className="planner-session-time">{session.time}</div>
                   <h3>{session.subject}</h3>
                 </div>
-                <span className={`tag ${session.tag || session.priority}`}>{session.tag || session.priority}</span>
+                <span className={`tag ${session.tag || session.priority}`}>
+                  {session.tag || session.priority}
+                </span>
               </div>
               <p className="planner-session-topic">
                 {session.chapter} · {session.topic}
@@ -438,7 +526,11 @@ function PlannerPage() {
                 <span>{session.durationMinutes} min focus</span>
                 <span>Reminder: {formatDateTime(session.reminderAt)}</span>
               </div>
-              <button className="secondary-button compact" type="button" onClick={() => speakReminder(session.reminderText)}>
+              <button
+                className="secondary-button compact"
+                type="button"
+                onClick={() => speakReminder(session.reminderText)}
+              >
                 <Mic size={16} />
                 Play Reminder
               </button>

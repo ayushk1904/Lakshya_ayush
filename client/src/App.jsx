@@ -5,6 +5,7 @@ import AnswerEvaluatorPage from "./pages/AnswerEvaluatorPage";
 import CoachPage from "./pages/CoachPage";
 import ConceptExplainerPage from "./pages/ConceptExplainerPage";
 import DashboardPage from "./pages/DashboardPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import PlannerPage from "./pages/PlannerPage";
@@ -29,6 +30,7 @@ function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
       <Route path="/app" element={<ProtectedRoute />}>

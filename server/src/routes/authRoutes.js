@@ -1,9 +1,11 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
 const { signToken } = require("../utils/auth");
+const { sendOtpEmail } = require("../utils/mailer");
 
 const router = express.Router();
 
@@ -17,21 +19,12 @@ function normalizeName(name) {
   return String(name || "").trim();
 }
 
-async function findPasswordConflict(password) {
-  const users = await User.find({}, { password: 1 }).lean();
+function isGmailAddress(email) {
+  return /^[a-z0-9._%+-]+@gmail\.com$/i.test(email);
+}
 
-  for (const user of users) {
-    if (typeof user.password !== "string" || !user.password) {
-      continue;
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (isMatch) {
-      return true;
-    }
-  }
-
-  return false;
+function hashOtp(otp) {
+  return crypto.createHash("sha256").update(otp).digest("hex");
 }
 
 function duplicateMessageForField(field) {
@@ -68,6 +61,14 @@ router.post("/register", async (req, res) => {
     return;
   }
 
+  if (!isGmailAddress(email)) {
+    return res.status(400).json({ message: "Please use a valid Gmail address", field: "email" });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters long", field: "password" });
+  }
+
   const existingUser = await User.findOne({
     $or: [{ name }, { email }]
   }).lean();
@@ -78,11 +79,6 @@ router.post("/register", async (req, res) => {
     }
 
     return res.status(400).json({ message: "Email is already taken", field: "email" });
-  }
-
-  const passwordTaken = await findPasswordConflict(password);
-  if (passwordTaken) {
-    return res.status(400).json({ message: "Password is already taken", field: "password" });
   }
 
   try {
@@ -112,6 +108,10 @@ router.post("/login", async (req, res) => {
     return;
   }
 
+  if (!isGmailAddress(email)) {
+    return res.status(400).json({ message: "Please use your registered Gmail address" });
+  }
+
   const user = await User.findOne({ email });
   if (!user) {
     return res.status(401).json({ message: "Invalid email or password" });
@@ -131,9 +131,112 @@ router.post("/login", async (req, res) => {
   return res.json({ token, user: { _id: user._id, name: user.name, email: user.email } });
 });
 
+router.post("/forgot-password/request-otp", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
+
+  if (!ensureDatabaseReady(res)) {
+    return;
+  }
+
+  if (!isGmailAddress(email)) {
+    return res.status(400).json({ message: "Please enter a valid Gmail address" });
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(404).json({ message: "No Lakshya account found for this Gmail address" });
+  }
+
+  const now = Date.now();
+  if (user.resetOtpSentAt && now - new Date(user.resetOtpSentAt).getTime() < 60 * 1000) {
+    return res.status(429).json({ message: "Please wait 1 minute before requesting another OTP" });
+  }
+
+  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  user.resetOtpHash = hashOtp(otp);
+  user.resetOtpExpiresAt = new Date(now + 10 * 60 * 1000);
+  user.resetOtpSentAt = new Date(now);
+
+  try {
+    await user.save();
+    await sendOtpEmail({
+      to: user.email,
+      name: user.name,
+      otp
+    });
+  } catch (error) {
+    user.resetOtpHash = null;
+    user.resetOtpExpiresAt = null;
+    user.resetOtpSentAt = null;
+    await user.save();
+    return res.status(500).json({ message: error.message || "Unable to send OTP email right now" });
+  }
+
+  return res.json({ message: "OTP sent to your Gmail account" });
+});
+
+router.post("/forgot-password/reset", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const otp = String(req.body.otp || "").trim();
+  const newPassword = typeof req.body.newPassword === "string" ? req.body.newPassword : "";
+
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ message: "Email, OTP, and new password are required" });
+  }
+
+  if (!ensureDatabaseReady(res)) {
+    return;
+  }
+
+  if (!isGmailAddress(email)) {
+    return res.status(400).json({ message: "Please enter a valid Gmail address" });
+  }
+
+  if (!/^\d{6}$/.test(otp)) {
+    return res.status(400).json({ message: "OTP must be a 6 digit code" });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: "New password must be at least 8 characters long" });
+  }
+
+  const user = await User.findOne({ email });
+  if (!user || !user.resetOtpHash || !user.resetOtpExpiresAt) {
+    return res.status(400).json({ message: "OTP verification is not active for this account" });
+  }
+
+  if (new Date(user.resetOtpExpiresAt).getTime() < Date.now()) {
+    return res.status(400).json({ message: "OTP has expired. Request a new code." });
+  }
+
+  if (hashOtp(otp) !== user.resetOtpHash) {
+    return res.status(400).json({ message: "Invalid OTP" });
+  }
+
+  user.password = await bcrypt.hash(newPassword, 10);
+  user.resetOtpHash = null;
+  user.resetOtpExpiresAt = null;
+  user.resetOtpSentAt = null;
+  await user.save();
+
+  const token = signToken(user);
+  return res.json({
+    message: "Password reset successful",
+    token,
+    user: { _id: user._id, name: user.name, email: user.email }
+  });
+});
+
 router.get("/me", authMiddleware, async (req, res) => {
   const user = req.user.toObject ? req.user.toObject() : req.user;
   delete user.password;
+  delete user.resetOtpHash;
+  delete user.resetOtpExpiresAt;
+  delete user.resetOtpSentAt;
   res.json({ user });
 });
 

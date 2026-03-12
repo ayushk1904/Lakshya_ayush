@@ -37,18 +37,23 @@ const coach = {
 };
 
 const chatRooms = [
-  { _id: "physics-room", name: "Physics Study Room", onlineCount: 3, subject: "Physics" }
+  {
+    _id: "physics-room",
+    name: "Lakshya Study Room",
+    onlineCount: 1,
+    subject: "General",
+    members: [{ name: "Lakshya Student", email: "student@lakshya.ai", status: "online", role: "owner" }],
+    invites: []
+  }
 ];
 
 const messages = [
-  { _id: "m1", roomId: "physics-room", user: { name: "Priya" }, time: "10:32 AM", text: "Hey everyone! Ready for tomorrow's physics test?" },
-  { _id: "m2", roomId: "physics-room", user: { name: "Rahul" }, time: "10:33 AM", text: "I'm stuck on thermodynamics. Can someone explain entropy?" },
   {
-    _id: "m3",
+    _id: "m1",
     roomId: "physics-room",
     user: { name: "AI Assistant", role: "ai" },
     time: "10:33 AM",
-    text: "Entropy is a measure of disorder in a system. Think of it like a messy room that tends to get messier over time."
+    text: "Invite a friend by email to start collaborating here."
   }
 ];
 

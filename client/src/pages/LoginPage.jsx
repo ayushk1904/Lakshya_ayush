@@ -36,8 +36,13 @@ function LoginPage() {
           <BrandLogo />
         </div>
         <h1>Login</h1>
-        <p>Sign in to your Lakshya workspace.</p>
-        <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" />
+        <p>Sign in with your registered Gmail account.</p>
+        <input
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="yourname@gmail.com"
+        />
         <input
           type="password"
           value={form.password}
@@ -48,6 +53,9 @@ function LoginPage() {
         <button className="primary-button" type="submit" disabled={loading}>
           {loading ? "Signing in..." : "Login"}
         </button>
+        <Link className="auth-link" to="/forgot-password">
+          Forgot password? Use OTP
+        </Link>
         <Link className="auth-link" to="/register">
           Need an account? Register
         </Link>

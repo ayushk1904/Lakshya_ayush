@@ -1,21 +1,38 @@
 import { Bot, Mic, Send, Sparkles, Users, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { chatApi } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import { fallbackChat } from "../data/demoData";
 
 function StudyHubPage() {
+  const { user } = useAuth();
   const [room, setRoom] = useState(fallbackChat.rooms[0]);
   const [messages, setMessages] = useState(fallbackChat.messages);
-  const [members] = useState(fallbackChat.members);
+  const [members, setMembers] = useState(fallbackChat.members);
+  const [invites, setInvites] = useState(fallbackChat.invites);
   const [draft, setDraft] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+  const [isInviting, setIsInviting] = useState(false);
+
+  function syncRoomState(nextRoom) {
+    setRoom(nextRoom);
+    setMembers(nextRoom?.members || []);
+    setInvites(nextRoom?.invites || []);
+  }
 
   useEffect(() => {
+    if (user) {
+      setMembers([{ name: user.name, email: user.email, status: "online", role: "owner" }]);
+    }
+
     chatApi
       .listRooms()
       .then((data) => {
         const firstRoom = data.rooms[0];
         if (firstRoom) {
-          setRoom(firstRoom);
+          syncRoomState(firstRoom);
           return chatApi.roomMessages(firstRoom._id);
         }
         return null;
@@ -24,12 +41,16 @@ function StudyHubPage() {
         if (messageData?.messages) {
           setMessages(messageData.messages);
         }
+
+        if (messageData?.room) {
+          syncRoomState(messageData.room);
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [user]);
 
   async function sendMessage() {
-    if (!draft.trim()) {
+    if (!room?._id || !draft.trim()) {
       return;
     }
 
@@ -47,6 +68,27 @@ function StudyHubPage() {
       const data = await chatApi.sendMessage(room._id, { text: optimistic.text });
       setMessages(data.messages);
     } catch {}
+  }
+
+  async function inviteMember() {
+    if (!room?._id || !inviteEmail.trim()) {
+      return;
+    }
+
+    setIsInviting(true);
+    setInviteError("");
+    setInviteSuccess("");
+
+    try {
+      const data = await chatApi.inviteByEmail(room._id, { email: inviteEmail });
+      syncRoomState(data.room);
+      setInviteSuccess(`Invitation sent to ${inviteEmail.trim()}`);
+      setInviteEmail("");
+    } catch (error) {
+      setInviteError(error.message);
+    } finally {
+      setIsInviting(false);
+    }
   }
 
   return (
@@ -97,16 +139,50 @@ function StudyHubPage() {
 
       <aside className="hub-sidebar">
         <h3>Online Members</h3>
+        <div className="invite-card">
+          <h4>Invite by email</h4>
+          <div className="invite-row">
+            <input
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              type="email"
+              placeholder="friend@example.com"
+            />
+            <button className="primary-button" type="button" onClick={inviteMember} disabled={isInviting}>
+              {isInviting ? "Sending..." : "Invite"}
+            </button>
+          </div>
+          {inviteError ? <div className="error-banner">{inviteError}</div> : null}
+          {inviteSuccess ? <div className="success-banner">{inviteSuccess}</div> : null}
+        </div>
         <div className="member-list">
           {members.map((member) => (
-            <div className="member-row" key={member.name}>
+            <div className="member-row" key={member.email || member.name}>
               <div className="member-left">
                 <div className="member-badge">{member.name.charAt(0)}</div>
-                <span>{member.name}</span>
+                <div className="member-copy">
+                  <span>{member.name}</span>
+                  <small>{member.email}</small>
+                </div>
               </div>
               <span className={`status-dot ${member.status}`} />
             </div>
           ))}
+        </div>
+        <div className="invite-list-panel">
+          <h4>Pending Invites</h4>
+          {invites.length ? (
+            <div className="invite-list">
+              {invites.map((invite) => (
+                <div className="invite-pill" key={invite.email}>
+                  <strong>{invite.invitedName || invite.email}</strong>
+                  <span>{invite.email}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-copy">No pending invites yet.</p>
+          )}
         </div>
         <div className="assistant-tip">
           <div className="panel-title">

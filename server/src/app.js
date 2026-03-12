@@ -3,6 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const authRoutes = require("./routes/authRoutes");
 const chatRoomRoutes = require("./routes/chatRoomRoutes");
+const conceptExplainerRoutes = require("./routes/conceptExplainerRoutes");
 const examSessionRoutes = require("./routes/examSessionRoutes");
 const studyPlanRoutes = require("./routes/studyPlanRoutes");
 
@@ -22,6 +23,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/study-plans", studyPlanRoutes);
+app.use("/api/concept-explainer", conceptExplainerRoutes);
 app.use("/api/chat-rooms", chatRoomRoutes);
 app.use("/api/exam-sessions", examSessionRoutes);
 

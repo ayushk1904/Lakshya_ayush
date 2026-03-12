@@ -39,6 +39,17 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  async function requestPasswordOtp(payload) {
+    return authApi.requestPasswordOtp(payload);
+  }
+
+  async function resetPasswordWithOtp(payload) {
+    const data = await authApi.resetPasswordWithOtp(payload);
+    localStorage.setItem("lakshya_token", data.token);
+    setUser(data.user);
+    return data;
+  }
+
   function logout() {
     localStorage.removeItem("lakshya_token");
     setUser(null);
@@ -52,6 +63,8 @@ export function AuthProvider({ children }) {
         isAuthenticated: Boolean(user),
         login,
         register,
+        requestPasswordOtp,
+        resetPasswordWithOtp,
         logout
       }}
     >

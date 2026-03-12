@@ -19,24 +19,18 @@ export const fallbackDashboard = {
 
 export const fallbackChat = {
   rooms: [
-    { _id: "physics-room", name: "Physics Study Room", onlineCount: 3, subject: "Physics" }
+    { _id: "physics-room", name: "Lakshya Study Room", onlineCount: 1, subject: "General", members: [], invites: [] }
   ],
   messages: [
-    { _id: "msg-1", user: { name: "Priya" }, time: "10:32 AM", text: "Hey everyone! Ready for tomorrow's physics test?" },
-    { _id: "msg-2", user: { name: "Rahul" }, time: "10:33 AM", text: "I'm stuck on thermodynamics. Can someone explain entropy?" },
     {
-      _id: "msg-3",
+      _id: "msg-1",
       user: { name: "AI Assistant", role: "ai" },
       time: "10:33 AM",
-      text: "Entropy is a measure of disorder in a system. Think of it like a messy room that tends to get messier over time."
+      text: "Invite a friend by email to start collaborating here."
     }
   ],
-  members: [
-    { name: "Priya", status: "online" },
-    { name: "Rahul", status: "online" },
-    { name: "Ananya", status: "online" },
-    { name: "Karthik", status: "away" }
-  ]
+  members: [],
+  invites: []
 };
 
 export const fallbackCoach = {

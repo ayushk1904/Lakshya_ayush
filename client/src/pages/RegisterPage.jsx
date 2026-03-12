@@ -36,14 +36,19 @@ function RegisterPage() {
           <BrandLogo />
         </div>
         <h1>Create Account</h1>
-        <p>Start your Lakshya study workspace.</p>
+        <p>Register with a real Gmail account and create a Lakshya password.</p>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
-        <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email" />
+        <input
+          type="email"
+          value={form.email}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+          placeholder="yourname@gmail.com"
+        />
         <input
           type="password"
           value={form.password}
           onChange={(e) => setForm({ ...form, password: e.target.value })}
-          placeholder="Password"
+          placeholder="Create password"
         />
         {error ? <div className="error-banner">{error}</div> : null}
         <button className="primary-button" type="submit" disabled={loading}>
