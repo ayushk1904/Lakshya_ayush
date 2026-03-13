@@ -15,15 +15,19 @@ const quickActions = [
 function DashboardPage() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState(fallbackDashboard);
-  const completedSubjects = dashboard.studyProgress.filter((subject) => subject.value >= 80).length;
-  const nextExam = dashboard.upcomingExams[0];
+  const studyProgress = dashboard.studyProgress || fallbackDashboard.studyProgress;
+  const todayPlan = dashboard.todayPlan || fallbackDashboard.todayPlan;
+  const upcomingExams = dashboard.upcomingExams || fallbackDashboard.upcomingExams;
+  const completedSubjects = studyProgress.filter((subject) => subject.value >= 80).length;
+  const nextExam = upcomingExams[0];
 
   useEffect(() => {
     Promise.allSettled([studyPlanApi.today(), examApi.upcoming()]).then(([planResult, examsResult]) => {
       setDashboard({
-        studyProgress: planResult.status === "fulfilled" ? planResult.value.studyProgress : fallbackDashboard.studyProgress,
-        todayPlan: planResult.status === "fulfilled" ? planResult.value.todayPlan : fallbackDashboard.todayPlan,
-        upcomingExams: examsResult.status === "fulfilled" ? examsResult.value.exams : fallbackDashboard.upcomingExams
+        studyProgress:
+          planResult.status === "fulfilled" ? planResult.value.studyProgress || fallbackDashboard.studyProgress : fallbackDashboard.studyProgress,
+        todayPlan: planResult.status === "fulfilled" ? planResult.value.todayPlan || fallbackDashboard.todayPlan : fallbackDashboard.todayPlan,
+        upcomingExams: examsResult.status === "fulfilled" ? examsResult.value.exams || fallbackDashboard.upcomingExams : fallbackDashboard.upcomingExams
       });
     });
   }, []);
@@ -46,11 +50,11 @@ function DashboardPage() {
             <span>subjects above 80%</span>
           </article>
           <article>
-            <strong>{dashboard.todayPlan.length}</strong>
+            <strong>{todayPlan.length}</strong>
             <span>tasks scheduled today</span>
           </article>
           <article>
-            <strong>{dashboard.upcomingExams.length}</strong>
+            <strong>{upcomingExams.length}</strong>
             <span>upcoming exam windows</span>
           </article>
         </div>
@@ -84,7 +88,7 @@ function DashboardPage() {
             <h2>Study Progress</h2>
           </div>
           <div className="progress-list">
-            {dashboard.studyProgress.map((subject) => (
+            {studyProgress.map((subject) => (
               <div key={subject.name} className="progress-row">
                 <div className="progress-meta">
                   <span>{subject.name}</span>
@@ -104,7 +108,7 @@ function DashboardPage() {
             <h2>Today's Plan</h2>
           </div>
           <div className="timeline">
-            {dashboard.todayPlan.map((item) => (
+            {todayPlan.map((item) => (
               <div className="timeline-row" key={item.time}>
                 <span className="timeline-time">{item.time}</span>
                 <div className="timeline-task">
@@ -122,7 +126,7 @@ function DashboardPage() {
             <h2>Upcoming Exams</h2>
           </div>
           <div className="exam-list">
-            {dashboard.upcomingExams.map((exam) => (
+            {upcomingExams.map((exam) => (
               <div className="exam-card" key={exam._id || exam.title}>
                 <div>
                   <strong>{exam.title}</strong>
