@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: lakshya-backend
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SMTP_GMAIL_USER
+        sync: false
+      - key: SMTP_GMAIL_APP_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: SMTP_ALLOW_SELF_SIGNED
+        value: "false"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
