@@ -7,6 +7,8 @@ const studyPlanSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     studyDate: String,
     syllabusName: String,
+    title: String,
+    request: String,
     studyWindow: {
       startTime: String,
       endTime: String,
@@ -38,6 +40,7 @@ const studyPlanSchema = new mongoose.Schema(
       }
     ],
     todayPlan: [{ time: String, task: String, tag: String, reminderAt: String, reminderText: String }],
+    details: mongoose.Schema.Types.Mixed,
     coach: {
       summary: String,
       voicePrompt: String,

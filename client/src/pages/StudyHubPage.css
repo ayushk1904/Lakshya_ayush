@@ -1,0 +1,54 @@
+.study-hub-screen {
+  display: block !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.study-hub-screen .study-hub-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.study-hub-screen .study-hub-layout.study-hub-layout-split {
+  grid-template-columns: minmax(0, 1fr) clamp(420px, 32vw, 520px) !important;
+}
+
+.study-hub-screen .hub-chat-panel {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  align-self: stretch !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.study-hub-screen .message-list {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  padding-bottom: 12px !important;
+}
+
+/* Only the full-screen chat traps scrolling; the inline chat must let the page scroll past it. */
+.study-hub-screen .chatbox-page-messages {
+  overscroll-behavior: contain;
+}
+
+.study-hub-screen .chat-input-row {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  box-shadow: 0 -10px 24px rgba(20, 28, 44, 0.06);
+}
+
+@media (max-width: 1200px) {
+  .study-hub-screen .study-hub-layout.study-hub-layout-split {
+    grid-template-columns: 1fr !important;
+  }
+}

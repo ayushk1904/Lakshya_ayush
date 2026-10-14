@@ -2,7 +2,8 @@ const nodemailer = require("nodemailer");
 
 function createTransport() {
   const user = process.env.SMTP_GMAIL_USER;
-  const pass = process.env.SMTP_GMAIL_APP_PASSWORD;
+  // Google shows App Passwords in groups ("abcd efgh ijkl mnop"); spaces are not part of it.
+  const pass = String(process.env.SMTP_GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
   const allowSelfSigned = process.env.SMTP_ALLOW_SELF_SIGNED === "true";
 
   if (!user || !pass) {

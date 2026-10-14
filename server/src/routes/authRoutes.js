@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
+const connectDB = require("../config/db");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
 const { signToken } = require("../utils/auth");
@@ -39,12 +40,17 @@ function duplicateMessageForField(field) {
   return "A unique value is already taken";
 }
 
-function ensureDatabaseReady(res) {
+async function ensureDatabaseReady(res) {
   if (mongoose.connection.readyState === 1) {
     return true;
   }
 
-  res.status(503).json({ message: "Database unavailable. Start MongoDB and try again." });
+  const isConnected = await connectDB();
+  if (isConnected && mongoose.connection.readyState === 1) {
+    return true;
+  }
+
+  res.status(503).json({ message: "Database unavailable right now. Please try again shortly." });
   return false;
 }
 
@@ -57,16 +63,16 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ message: "Name, email, and password are required" });
   }
 
-  if (!ensureDatabaseReady(res)) {
-    return;
-  }
-
   if (!isGmailAddress(email)) {
     return res.status(400).json({ message: "Please use a valid Gmail address", field: "email" });
   }
 
   if (password.length < 8) {
     return res.status(400).json({ message: "Password must be at least 8 characters long", field: "password" });
+  }
+
+  if (!(await ensureDatabaseReady(res))) {
+    return;
   }
 
   const existingUser = await User.findOne({
@@ -104,12 +110,12 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ message: "Email and password are required" });
   }
 
-  if (!ensureDatabaseReady(res)) {
-    return;
-  }
-
   if (!isGmailAddress(email)) {
     return res.status(400).json({ message: "Please use your registered Gmail address" });
+  }
+
+  if (!(await ensureDatabaseReady(res))) {
+    return;
   }
 
   const user = await User.findOne({ email });
@@ -138,12 +144,12 @@ router.post("/forgot-password/request-otp", async (req, res) => {
     return res.status(400).json({ message: "Email is required" });
   }
 
-  if (!ensureDatabaseReady(res)) {
-    return;
-  }
-
   if (!isGmailAddress(email)) {
     return res.status(400).json({ message: "Please enter a valid Gmail address" });
+  }
+
+  if (!(await ensureDatabaseReady(res))) {
+    return;
   }
 
   const user = await User.findOne({ email });
@@ -188,10 +194,6 @@ router.post("/forgot-password/reset", async (req, res) => {
     return res.status(400).json({ message: "Email, OTP, and new password are required" });
   }
 
-  if (!ensureDatabaseReady(res)) {
-    return;
-  }
-
   if (!isGmailAddress(email)) {
     return res.status(400).json({ message: "Please enter a valid Gmail address" });
   }
@@ -202,6 +204,10 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   if (newPassword.length < 8) {
     return res.status(400).json({ message: "New password must be at least 8 characters long" });
+  }
+
+  if (!(await ensureDatabaseReady(res))) {
+    return;
   }
 
   const user = await User.findOne({ email });
@@ -238,6 +244,56 @@ router.get("/me", authMiddleware, async (req, res) => {
   delete user.resetOtpExpiresAt;
   delete user.resetOtpSentAt;
   res.json({ user });
+});
+
+router.put("/profile", authMiddleware, async (req, res) => {
+  const name = normalizeName(req.body.name);
+  const email = normalizeEmail(req.body.email);
+
+  if (!name || !email) {
+    return res.status(400).json({ message: "Name and email are required" });
+  }
+
+  if (!isGmailAddress(email)) {
+    return res.status(400).json({ message: "Please use a valid Gmail address", field: "email" });
+  }
+
+  if (!(await ensureDatabaseReady(res))) {
+    return;
+  }
+
+  const duplicateUser = await User.findOne({
+    _id: { $ne: req.user._id },
+    $or: [{ name }, { email }]
+  }).lean();
+
+  if (duplicateUser) {
+    if (duplicateUser.name === name) {
+      return res.status(400).json({ message: "Username is already taken", field: "name" });
+    }
+
+    return res.status(400).json({ message: "Email is already taken", field: "email" });
+  }
+
+  try {
+    req.user.name = name;
+    req.user.email = email;
+    await req.user.save();
+
+    const token = signToken(req.user);
+    return res.json({
+      message: "Profile updated successfully",
+      token,
+      user: { _id: req.user._id, name: req.user.name, email: req.user.email }
+    });
+  } catch (error) {
+    if (error && error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0];
+      return res.status(400).json({ message: duplicateMessageForField(field), field });
+    }
+
+    throw error;
+  }
 });
 
 module.exports = router;

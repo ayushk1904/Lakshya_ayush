@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+const connectDB = require("../config/db");
 const User = require("../models/User");
 
 async function authMiddleware(req, res, next) {
@@ -14,7 +15,10 @@ async function authMiddleware(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET || "lakshya-dev-secret");
 
     if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ message: "Database unavailable. Start MongoDB and try again." });
+      const isConnected = await connectDB();
+      if (!isConnected || mongoose.connection.readyState !== 1) {
+        return res.status(503).json({ message: "Database unavailable right now. Please try again shortly." });
+      }
     }
 
     const user = await User.findById(payload.userId).select("-password");

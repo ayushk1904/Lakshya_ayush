@@ -19,12 +19,12 @@ export const fallbackDashboard = {
 
 export const fallbackChat = {
   rooms: [
-    { _id: "physics-room", name: "Lakshya Study Room", onlineCount: 1, subject: "General", members: [], invites: [] }
+    { _id: "physics-room", name: "Lakshya Study Room", avatarUrl: "", onlineCount: 1, subject: "General", members: [], invites: [] }
   ],
   messages: [
     {
       _id: "msg-1",
-      user: { name: "AI Assistant", role: "ai" },
+      user: { name: "Lakshya AI", role: "ai" },
       time: "10:33 AM",
       text: "Invite a friend by email to start collaborating here."
     }
@@ -44,22 +44,4 @@ export const fallbackCoach = {
     { time: "3:00 PM - 4:00 PM", task: "Topper Answers Review", note: "Presentation boost" },
     { time: "6:00 PM - 7:00 PM", task: "Formula Recap + Flash Revision", note: "Retention block" }
   ]
-};
-
-export const fallbackProgress = {
-  stats: [
-    ["Total Study Hours", "48h"],
-    ["Goals Completed", "18/25"],
-    ["Improvement", "+12%"],
-    ["Achievements", "4/6"]
-  ],
-  weeklyHours: [2, 3, 2.5, 4, 3.5, 5, 4.5],
-  trendScores: [65, 70, 68, 74],
-  subjects: [
-    ["Mathematics", 75, "purple"],
-    ["Physics", 60, "green"],
-    ["Chemistry", 85, "gold"],
-    ["Computer Science", 90, "red"]
-  ],
-  achievements: ["7-Day Streak", "Perfect Score", "Early Bird", "Night Owl", "Quick Learner", "Consistent"]
 };

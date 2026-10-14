@@ -1,4 +1,5 @@
 import { ArrowRight, BookOpen, Brain, ClipboardCheck, Clock3, Sparkles, Target, Users } from "lucide-react";
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import BrandLogo from "../components/BrandLogo";
 import ThemeSwitcher from "../components/ThemeSwitcher";
@@ -20,6 +21,40 @@ const heroStats = [
 
 function LandingPage() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const revealItems = Array.from(document.querySelectorAll("[data-reveal]"));
+    if (!revealItems.length) {
+      return undefined;
+    }
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      revealItems.forEach((item) => item.classList.add("is-visible"));
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      },
+      {
+        threshold: 0.2,
+        rootMargin: "0px 0px -8% 0px"
+      }
+    );
+
+    revealItems.forEach((item) => observer.observe(item));
+
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="landing">
@@ -67,6 +102,25 @@ function LandingPage() {
               </article>
             ))}
           </div>
+          <div className="landing-video-shell">
+            <div className="landing-video-frame">
+              <video
+                className="landing-video"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                disablePictureInPicture
+                disableRemotePlayback
+                controlsList="nodownload noplaybackrate noremoteplayback"
+                aria-label="Lakshya app advertisement video"
+              >
+                <source src="/AI Personalized SelfStudy App Logo Animation_0p_no_watermark.mp4" type="video/mp4" />
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -82,7 +136,7 @@ function LandingPage() {
           {features.map((feature) => {
             const Icon = feature.icon;
             return (
-              <article className="feature-card" key={feature.title}>
+              <article className="feature-card reveal-slide reveal-up" data-reveal key={feature.title}>
                 <div className="feature-icon">
                   <Icon size={24} />
                 </div>
@@ -103,7 +157,7 @@ function LandingPage() {
         </div>
 
         <div className="spotlight-grid">
-          <article className="spotlight-card proctor-card">
+          <article className="spotlight-card proctor-card reveal-slide reveal-up" data-reveal>
             <p className="spotlight-label">Exam pressure</p>
             <h3>Simulate the real thing</h3>
             <p>Run timed sessions, keep attention high, and let the AI watch for drift before exam habits become a problem.</p>
@@ -114,7 +168,7 @@ function LandingPage() {
             </div>
           </article>
 
-          <article className="spotlight-card hub-card">
+          <article className="spotlight-card hub-card reveal-slide reveal-up" data-reveal>
             <p className="spotlight-label">Study together</p>
             <h3>Rooms that feel active</h3>
             <p>Move from solo prep into shared rooms, compare progress, and resolve doubts without leaving the workflow.</p>
@@ -125,7 +179,7 @@ function LandingPage() {
             </div>
           </article>
 
-          <article className="spotlight-card coach-card">
+          <article className="spotlight-card coach-card reveal-slide reveal-up" data-reveal>
             <p className="spotlight-label">Last-day prep</p>
             <h3>Know what matters next</h3>
             <p>When time compresses, Lakshya shifts from broad planning to a tactical sequence of revision, testing, and recall.</p>

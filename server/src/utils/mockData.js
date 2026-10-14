@@ -51,15 +51,10 @@ const messages = [
   {
     _id: "m1",
     roomId: "physics-room",
-    user: { name: "AI Assistant", role: "ai" },
+    user: { name: "Lakshya AI", role: "ai" },
     time: "10:33 AM",
     text: "Invite a friend by email to start collaborating here."
   }
-];
-
-const exams = [
-  { _id: "exam-1", title: "Physics Mock Test", date: "Mar 14", count: "30 questions", attentionScore: 92 },
-  { _id: "exam-2", title: "Math Chapter Test", date: "Mar 16", count: "25 questions", attentionScore: 88 }
 ];
 
 module.exports = {
@@ -68,5 +63,4 @@ module.exports = {
   coach,
   chatRooms,
   messages,
-  exams
 };

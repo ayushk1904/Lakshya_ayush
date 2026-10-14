@@ -17,8 +17,9 @@ const roomInviteSchema = new mongoose.Schema(
     invitedName: { type: String, default: "", trim: true },
     invitedByUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     invitedByName: { type: String, required: true, trim: true },
-    status: { type: String, enum: ["pending"], default: "pending" },
-    invitedAt: { type: Date, default: Date.now }
+    status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
+    invitedAt: { type: Date, default: Date.now },
+    respondedAt: { type: Date }
   },
   { _id: false }
 );
@@ -27,6 +28,7 @@ const chatRoomSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     subject: { type: String, default: "General", trim: true },
+    avatarUrl: { type: String, default: "", trim: true },
     onlineCount: { type: Number, default: 0 },
     members: { type: [roomMemberSchema], default: [] },
     invites: { type: [roomInviteSchema], default: [] }

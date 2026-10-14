@@ -5,6 +5,12 @@
   "scripts": {
     "client": "npm --prefix client run dev",
     "server": "npm --prefix server run dev",
-    "build": "npm --prefix client run build"
+    "build": "npm --prefix client run build",
+    "planner": "python -m uvicorn main:app --app-dir planner-ai --port 8001",
+    "planner:dev": "python -m uvicorn main:app --app-dir planner-ai --port 8001 --reload --reload-dir planner-ai"
+  },
+  "dependencies": {
+    "mermaid": "^10.9.5",
+    "mongodb": "^7.7.0"
   }
 }

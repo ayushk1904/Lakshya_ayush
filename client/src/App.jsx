@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./components/AppLayout";
 import { useAuth } from "./context/AuthContext";
 import AnswerEvaluatorPage from "./pages/AnswerEvaluatorPage";
+import AccountSettingsPage from "./pages/AccountSettingsPage";
 import CoachPage from "./pages/CoachPage";
 import ConceptExplainerPage from "./pages/ConceptExplainerPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -38,6 +39,7 @@ function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="planner" element={<PlannerPage />} />
         <Route path="tests" element={<PracticeTestsPage />} />
+        <Route path="account-settings" element={<AccountSettingsPage />} />
         <Route path="explainer" element={<ConceptExplainerPage />} />
         <Route path="evaluator" element={<AnswerEvaluatorPage />} />
         <Route path="hub" element={<StudyHubPage />} />

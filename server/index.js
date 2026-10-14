@@ -9,7 +9,13 @@ const connectDB = require("./src/config/db");
 const host = process.env.HOST || "0.0.0.0";
 const port = process.env.PORT || 5000;
 
-connectDB().finally(() => {
+const { resumeInterruptedIndexing } = require("./src/routes/studyPlannerRoutes");
+
+connectDB().then((connected) => {
+  if (connected) {
+    resumeInterruptedIndexing().catch((error) => console.error("resume indexing error:", error));
+  }
+}).finally(() => {
   app.listen(port, host, () => {
     console.log(`Lakshya server listening on http://${host}:${port}`);
   });
