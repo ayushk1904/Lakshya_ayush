@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
 const ChatRoom = require("../models/ChatRoom");
@@ -52,12 +53,27 @@ function normalizeRoomAvatar(avatarUrl) {
   return `data:${mimeType};base64,${base64Payload}`;
 }
 
+function generateInviteCode() {
+  return crypto.randomBytes(9).toString("base64url");
+}
+
+// Rooms created before invite links existed get a code the first time a member loads them.
+async function ensureInviteCodes(rooms) {
+  for (const room of rooms) {
+    if (!room.inviteCode) {
+      room.inviteCode = generateInviteCode();
+      await room.save();
+    }
+  }
+}
+
 function serializeRoom(room) {
   return {
     _id: room._id,
     name: room.name,
     subject: room.subject,
     avatarUrl: room.avatarUrl || "",
+    inviteCode: room.inviteCode || "",
     onlineCount: Array.isArray(room.members) ? room.members.filter((member) => member.status === "online").length : 0,
     members: room.members || [],
     invites: room.invites || []
@@ -393,6 +409,7 @@ router.post("/", async (req, res) => {
     name,
     subject,
     avatarUrl,
+    inviteCode: generateInviteCode(),
     members: [
       {
         userId: req.user._id,
@@ -426,7 +443,69 @@ router.get("/", async (req, res) => {
 
   await ensurePersonalRoom(req.user);
   const rooms = await ChatRoom.find({ "members.email": req.user.email }).sort({ createdAt: -1 });
+  await ensureInviteCodes(rooms);
   return res.json({ rooms: rooms.map(serializeRoom) });
+});
+
+async function findRoomByInviteCode(code) {
+  const inviteCode = String(code || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,32}$/.test(inviteCode)) {
+    return null;
+  }
+  return ChatRoom.findOne({ inviteCode });
+}
+
+// Preview shown to someone who opened an invite link, before they choose to join.
+router.get("/join/:code", async (req, res) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: "Database unavailable. Please try again shortly." });
+  }
+
+  const room = await findRoomByInviteCode(req.params.code);
+  if (!room) {
+    return res.status(404).json({ message: "This invite link is invalid or the room no longer exists." });
+  }
+
+  const owner = room.members.find((member) => member.role === "owner");
+  return res.json({
+    room: {
+      _id: room._id,
+      name: room.name,
+      subject: room.subject,
+      avatarUrl: room.avatarUrl || "",
+      memberCount: room.members.length,
+      ownerName: owner?.name || ""
+    },
+    alreadyMember: room.members.some((member) => member.email === normalizeEmail(req.user.email))
+  });
+});
+
+router.post("/join/:code", async (req, res) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: "Database unavailable. Please try again shortly." });
+  }
+
+  const room = await findRoomByInviteCode(req.params.code);
+  if (!room) {
+    return res.status(404).json({ message: "This invite link is invalid or the room no longer exists." });
+  }
+
+  const email = normalizeEmail(req.user.email);
+  const alreadyMember = room.members.some((member) => member.email === email);
+
+  if (!alreadyMember) {
+    room.members.push({ userId: req.user._id, name: req.user.name, email, status: "online", role: "member" });
+
+    const pendingInvite = room.invites.find((invite) => invite.email === email && invite.status === "pending");
+    if (pendingInvite) {
+      pendingInvite.status = "accepted";
+      pendingInvite.respondedAt = new Date();
+    }
+
+    await room.save();
+  }
+
+  return res.json({ room: serializeRoom(room), alreadyMember });
 });
 
 router.get("/:roomId/messages", async (req, res) => {

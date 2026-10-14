@@ -52,3 +52,417 @@
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ---------- Study Hub: clean alignment pass ---------- */
+
+/* Header: one tidy row — identity on the left, actions on the right. */
+.study-hub-screen .hub-header {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.study-hub-screen .hub-room-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.study-hub-screen .hub-header .hub-room-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+}
+
+.study-hub-screen .hub-header .hub-room-avatar-badge {
+  right: -4px;
+  bottom: -4px;
+  width: 22px;
+  height: 22px;
+}
+
+.study-hub-screen .hub-room-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.study-hub-screen .hub-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.study-hub-screen .hub-room-text h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  max-width: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.study-hub-screen .hub-room-text p {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.study-hub-screen .hub-online-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #22c55e 22%, transparent);
+}
+
+.study-hub-screen .hub-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.study-hub-screen .hub-action {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--stroke);
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.study-hub-screen .hub-action:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--stroke));
+  transform: translateY(-1px);
+}
+
+.study-hub-screen .hub-action:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.study-hub-screen .hub-action-active {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--stroke));
+  background: color-mix(in srgb, var(--primary) 12%, var(--panel-strong));
+  color: var(--primary-dark);
+}
+
+.study-hub-screen .hub-action-call {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  color: #fff;
+}
+
+.study-hub-screen .hub-action-call.hub-action-live {
+  background: linear-gradient(135deg, #15803d, #22c55e);
+}
+
+/* Messages: tighter rhythm; actions fade in on hover so the text reads first. */
+.study-hub-screen .message-list {
+  padding: 16px 20px !important;
+  gap: 14px;
+}
+
+.study-hub-screen .message-row {
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.study-hub-screen .message-row .avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+}
+
+.study-hub-screen .message-content {
+  padding: 12px 16px;
+  border-radius: 18px;
+  min-width: 0;
+}
+
+.study-hub-screen .message-meta {
+  gap: 10px;
+}
+
+.study-hub-screen .message-meta span {
+  font-size: 0.82rem;
+}
+
+.study-hub-screen .message-content p {
+  margin-top: 6px;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.study-hub-screen .message-actions {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.study-hub-screen .message-row:hover .message-actions,
+.study-hub-screen .message-actions:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .study-hub-screen .message-actions {
+    opacity: 1;
+  }
+}
+
+.study-hub-screen .message-action-button {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+}
+
+/* Composer: every control shares one height and baseline. */
+.study-hub-screen .chat-input-row {
+  padding: 12px 18px 14px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.study-hub-screen .chat-input-row .composer-action {
+  height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.study-hub-screen .chat-input-row input[type="text"] {
+  height: 46px;
+  padding: 0 16px;
+  border-radius: 14px;
+  min-width: 0;
+}
+
+.study-hub-screen .chat-input-row .send-button {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+}
+
+.study-hub-screen .reply-composer,
+.study-hub-screen .composer-attachments {
+  margin: 0 18px 8px;
+}
+
+/* Room settings drawer: consistent spacing and compact cards. */
+@media (min-width: 1201px) {
+  .study-hub-screen .study-hub-layout.study-hub-layout-split {
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 440px) !important;
+  }
+
+  .study-hub-screen .chatbox-page-panel-split {
+    grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 440px);
+  }
+}
+
+.study-hub-screen .room-settings-drawer-header {
+  padding: 14px 20px;
+}
+
+.study-hub-screen .room-settings-drawer-scroll {
+  padding: 18px;
+  gap: 14px;
+}
+
+.study-hub-screen .room-settings-drawer-card {
+  padding: 18px;
+  gap: 14px;
+  border-radius: 20px;
+}
+
+.study-hub-screen .room-settings-drawer-card-head h4 {
+  font-size: 1.05rem;
+}
+
+.study-hub-screen .room-settings-drawer-hero {
+  padding: 22px 18px;
+  gap: 6px;
+  border-radius: 20px;
+}
+
+.study-hub-screen .room-settings-drawer-hero h3 {
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.study-hub-screen .room-settings-drawer-hero .hub-room-avatar-large {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+}
+
+.study-hub-screen .room-settings-drawer .invite-row {
+  align-items: end;
+}
+
+.study-hub-screen .room-settings-drawer .invite-row .primary-button {
+  min-width: 96px;
+  height: 48px;
+}
+
+.study-hub-screen .invite-share-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.study-hub-screen .invite-share-row .secondary-button {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.study-hub-screen .room-settings-room-item {
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.study-hub-screen .room-settings-room-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.study-hub-screen .room-settings-create-trigger {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* Invite-link dialog. */
+.hub-join-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  padding: 16px;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 16, 28, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.hub-join-card {
+  width: min(100%, 400px);
+  padding: 28px 24px 24px;
+  border-radius: 24px;
+  border: 1px solid var(--stroke);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.hub-join-card .hub-room-avatar-large {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  margin-bottom: 6px;
+}
+
+.hub-join-card .hub-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-join-card h3 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.4rem;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.hub-join-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.hub-join-actions {
+  margin-top: 12px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.hub-join-actions button {
+  justify-content: center;
+}
+
+/* Small screens: actions wrap under the title; composer keeps its buttons on one row under the text box. */
+@media (max-width: 780px) {
+  .study-hub-screen .hub-header {
+    padding: 12px 14px;
+  }
+
+  .study-hub-screen .hub-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .study-hub-screen .hub-action {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 10px;
+  }
+
+  .study-hub-screen .message-list {
+    padding: 12px 14px !important;
+  }
+
+  .study-hub-screen .chat-input-row {
+    padding: 10px 14px 12px;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+
+  .study-hub-screen .chat-input-row input[type="text"] {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .study-hub-screen .chat-input-row .send-button {
+    grid-column: 4;
+  }
+
+  .study-hub-screen .invite-share-row {
+    grid-template-columns: 1fr;
+  }
+}

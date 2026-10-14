@@ -1,6 +1,6 @@
-import { Camera, Clipboard, CornerUpLeft, FileText, Image as ImageIcon, Link2, Maximize2, MessageSquare, Mic, MicOff, Minimize2, MonitorUp, MoreHorizontal, Paperclip, PencilLine, PhoneOff, Plus, Send, Settings, Users, Video, VideoOff, X } from "lucide-react";
+import { Camera, Check, Copy, CornerUpLeft, FileText, Image as ImageIcon, Link2, Maximize2, MessageSquare, Mic, MicOff, Minimize2, MonitorUp, MoreHorizontal, Paperclip, PencilLine, PhoneOff, Plus, Send, Settings, UserPlus, Users, Video, VideoOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { chatApi, examApi } from "../api/client";
 import lakshyaAiLogo from "../assets/lakshya-ai-logo.png";
 import lakshyaAiLogoDark from "../assets/lakshya-ai-logo-dark.png";
@@ -10,8 +10,12 @@ import { useTheme } from "../context/ThemeContext";
 import { fallbackChat } from "../data/demoData";
 import "./StudyHubPage.css";
 
+// Invite links must open the public site even when the app is running locally.
+const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL?.trim() || "https://lakshya-ayush.vercel.app").replace(/\/$/, "");
+
 function StudyHubPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, avatarUrl } = useAuth();
   const { theme } = useTheme();
   const [rooms, setRooms] = useState([fallbackChat.rooms[0]]);
@@ -28,7 +32,6 @@ function StudyHubPage() {
   const [micEnabled, setMicEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [permissionError, setPermissionError] = useState("");
-  const [roomCode, setRoomCode] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [activeCall, setActiveCall] = useState(null);
   const [isChatExpanded, setIsChatExpanded] = useState(false);
@@ -54,6 +57,9 @@ function StudyHubPage() {
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [processingInviteRoomId, setProcessingInviteRoomId] = useState("");
   const [joiningPracticeInviteId, setJoiningPracticeInviteId] = useState("");
+  const [linkInvite, setLinkInvite] = useState(null);
+  const [isJoiningByLink, setIsJoiningByLink] = useState(false);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const micStreamRef = useRef(null);
   const cameraStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
@@ -158,8 +164,50 @@ function StudyHubPage() {
     if (user) {
       setMembers([{ name: user.name, email: user.email, status: "online", role: "owner" }]);
     }
-    loadRoomsAndInvites();
+    loadRoomsAndInvites(searchParams.get("room") || undefined);
   }, [user]);
+
+  // Someone opened a shared invite link (/app/hub?join=<code>): show who invited them and let them join.
+  useEffect(() => {
+    const code = searchParams.get("join");
+    if (!user || !code) {
+      return;
+    }
+
+    setLinkInvite({ code, room: null, alreadyMember: false, error: "" });
+    chatApi
+      .previewJoin(code)
+      .then((data) => setLinkInvite({ code, room: data.room, alreadyMember: data.alreadyMember, error: "" }))
+      .catch((error) => setLinkInvite({ code, room: null, alreadyMember: false, error: error.message }));
+  }, [user, searchParams]);
+
+  function dismissLinkInvite() {
+    setLinkInvite(null);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("join");
+      return next;
+    }, { replace: true });
+  }
+
+  async function joinRoomFromLink() {
+    if (!linkInvite?.code || isJoiningByLink) {
+      return;
+    }
+
+    setIsJoiningByLink(true);
+
+    try {
+      const data = await chatApi.joinByCode(linkInvite.code);
+      dismissLinkInvite();
+      await loadRoomsAndInvites(data.room?._id);
+      setInviteSuccess(data.alreadyMember ? "You're already in this room." : `You joined ${data.room?.name || "the study room"}.`);
+    } catch (error) {
+      setLinkInvite((current) => (current ? { ...current, error: error.message } : current));
+    } finally {
+      setIsJoiningByLink(false);
+    }
+  }
 
   useEffect(() => {
     if (!user) {
@@ -677,37 +725,38 @@ function StudyHubPage() {
   }
 
   function generateInviteLink() {
-    return `${window.location.origin}/studyhub?room=${room._id}`;
+    if (!room?.inviteCode) {
+      setInviteError("Invite link isn't ready yet. Please wait a moment and try again.");
+      return "";
+    }
+
+    return `${PUBLIC_APP_URL}/app/hub?join=${room.inviteCode}`;
   }
 
   function inviteViaWhatsApp() {
     const inviteLink = generateInviteLink();
-    const message = `Join my Lakshya Study Room: ${inviteLink}`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    if (!inviteLink) {
+      return;
+    }
+
+    const message = `Join my Lakshya Study Room "${room.name}": ${inviteLink}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener");
   }
 
-  function generateRoomCode() {
-    const seed = String(room?._id || room?.name || "studyhub").replace(/[^a-z0-9]/gi, "").toUpperCase();
-    const code = `${seed}HUB`.slice(0, 6).padEnd(6, "X");
-    setRoomCode(code);
-    return code;
-  }
+  async function copyInviteLink() {
+    const inviteLink = generateInviteLink();
+    if (!inviteLink) {
+      return;
+    }
 
-  async function copyRoomCode() {
-    const code = generateRoomCode();
     try {
-      await navigator.clipboard.writeText(code);
-      setInviteSuccess("Room code copied to clipboard!");
-      setTimeout(() => setInviteSuccess(""), 3000);
-    } catch (error) {
-      setInviteError("Failed to copy code. Please copy manually.");
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteLinkCopied(true);
+      window.setTimeout(() => setInviteLinkCopied(false), 2500);
+    } catch {
+      setInviteError(`Couldn't copy automatically. Share this link: ${inviteLink}`);
     }
   }
-
-  useEffect(() => {
-    generateRoomCode();
-  }, [room]);
 
   const placeholder = draft.startsWith("@ai")
     ? "Ask AI anything about this question..."
@@ -936,6 +985,23 @@ function StudyHubPage() {
         </div>
 
         <div className="room-settings-drawer-scroll">
+          <section className="room-settings-drawer-hero">
+            <button
+              className="hub-room-avatar hub-room-avatar-large hub-room-avatar-button"
+              type="button"
+              onClick={triggerRoomAvatarPicker}
+              aria-label="Upload room avatar"
+              title="Upload room avatar"
+            >
+              {roomSettings.avatarUrl ? <img src={roomSettings.avatarUrl} alt="" /> : <span>{getRoomInitials(roomSettings.name)}</span>}
+              <span className="hub-room-avatar-badge">
+                <Camera size={14} />
+              </span>
+            </button>
+            <h3>{roomSettings.name || "Study Room"}</h3>
+            <p>{members.length} active in this room</p>
+          </section>
+
           <section className="room-settings-drawer-card">
             <div className="room-settings-drawer-card-head">
               <span className="room-settings-page-eyebrow">Notifications</span>
@@ -971,83 +1037,65 @@ function StudyHubPage() {
 
           <section className="room-settings-drawer-card">
             <div className="room-settings-drawer-card-head">
-              <span className="room-settings-page-eyebrow">Rooms</span>
-              <h4>Your Study Rooms</h4>
+              <span className="room-settings-page-eyebrow">Invite</span>
+              <h4>Invite Members</h4>
             </div>
-            <div className="room-settings-room-list">
-              {rooms.map((item) => (
-                <button
-                  key={item._id}
-                  className={`room-settings-room-item ${item._id === room?._id ? "active" : ""}`}
-                  type="button"
-                  onClick={() => openRoom(item._id)}
-                >
-                  <span className="room-settings-room-avatar">
-                    {item.avatarUrl ? <img src={item.avatarUrl} alt="" /> : <span>{getRoomInitials(item.name)}</span>}
-                  </span>
-                  <span className="room-settings-room-copy">
-                    <strong>{item.name}</strong>
-                    <small>{item.onlineCount || 0} online</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="room-settings-drawer-hero">
-            <button
-              className="hub-room-avatar hub-room-avatar-large hub-room-avatar-button"
-              type="button"
-              onClick={triggerRoomAvatarPicker}
-              aria-label="Upload room avatar"
-              title="Upload room avatar"
-            >
-              {roomSettings.avatarUrl ? <img src={roomSettings.avatarUrl} alt="" /> : <span>{getRoomInitials(roomSettings.name)}</span>}
-              <span className="hub-room-avatar-badge">
-                <Camera size={14} />
-              </span>
-            </button>
-            <h3>{roomSettings.name || "Study Room"}</h3>
-            <p>{members.length} active in this room</p>
-          </section>
-
-          <section className="room-settings-drawer-card">
-            <div className="room-settings-drawer-card-head">
-              <span className="room-settings-page-eyebrow">Create</span>
-              <h4>Create Study Room</h4>
-            </div>
-            <div className="room-settings-create-grid room-settings-drawer-grid">
-              <label className="planner-field room-settings-field room-settings-create-field">
-                <span>Room Name</span>
-                <div className="account-input-shell">
-                  <Plus size={16} />
-                  <input
-                    type="text"
-                    value={createRoomForm.name}
-                    onChange={(event) => setCreateRoomForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Enter a new room name"
-                  />
-                </div>
-              </label>
-
-              <label className="planner-field room-settings-field room-settings-create-field">
-                <span>Invite Friends</span>
+            <div className="invite-row">
+              <label className="planner-field room-settings-field room-settings-inline-field">
+                <span>Friend Email</span>
                 <div className="account-input-shell">
                   <MessageSquare size={16} />
                   <input
-                    type="text"
-                    value={createRoomForm.inviteEmails}
-                    onChange={(event) => setCreateRoomForm((current) => ({ ...current, inviteEmails: event.target.value }))}
-                    placeholder="Add emails separated by commas"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        inviteMember();
+                      }
+                    }}
+                    type="email"
+                    placeholder="friend@example.com"
                   />
                 </div>
               </label>
+              <button className="primary-button" type="button" onClick={inviteMember} disabled={isInviting}>
+                {isInviting ? "Sending..." : "Invite"}
+              </button>
             </div>
-            <button className="primary-button compact room-settings-create-trigger" type="button" onClick={createStudyRoom} disabled={isCreatingRoom || !createRoomForm.name.trim()}>
-              <Plus size={16} />
-              {isCreatingRoom ? "Creating..." : "Create Study Room"}
-            </button>
+
+            <div className="invite-share-row">
+              <button className="secondary-button" type="button" onClick={inviteViaWhatsApp}>
+                <MessageSquare size={16} />
+                Invite via WhatsApp
+              </button>
+              <button className="secondary-button" type="button" onClick={copyInviteLink}>
+                {inviteLinkCopied ? <Check size={16} /> : <Copy size={16} />}
+                {inviteLinkCopied ? "Link copied" : "Copy invite link"}
+              </button>
+            </div>
+            <p className="room-settings-muted-note">Anyone with the link can join this room after logging in.</p>
+
+            {inviteError ? <div className="error-banner">{inviteError}</div> : null}
+            {inviteSuccess ? <div className="success-banner">{inviteSuccess}</div> : null}
           </section>
+
+          {invites.length ? (
+            <section className="room-settings-drawer-card">
+              <div className="room-settings-drawer-card-head">
+                <span className="room-settings-page-eyebrow">Pending</span>
+                <h4>Pending Invites</h4>
+              </div>
+              <div className="invite-list">
+                {invites.map((invite) => (
+                  <div className="invite-pill" key={invite.email}>
+                    <strong>{invite.invitedName || invite.email}</strong>
+                    <span>{invite.email}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="room-settings-drawer-card">
             <div className="room-settings-drawer-card-head">
@@ -1101,63 +1149,66 @@ function StudyHubPage() {
 
           <section className="room-settings-drawer-card">
             <div className="room-settings-drawer-card-head">
-              <span className="room-settings-page-eyebrow">Invite</span>
-              <h4>Invite Members</h4>
+              <span className="room-settings-page-eyebrow">Rooms</span>
+              <h4>Your Study Rooms</h4>
             </div>
-            <div className="invite-row">
-              <label className="planner-field room-settings-field room-settings-inline-field">
-                <span>Friend Email</span>
-                <div className="account-input-shell">
-                  <MessageSquare size={16} />
-                  <input
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    type="email"
-                    placeholder="friend@example.com"
-                  />
-                </div>
-              </label>
-              <button className="primary-button" type="button" onClick={inviteMember} disabled={isInviting}>
-                {isInviting ? "Sending..." : "Invite"}
-              </button>
-            </div>
-            {inviteError ? <div className="error-banner">{inviteError}</div> : null}
-            {inviteSuccess ? <div className="success-banner">{inviteSuccess}</div> : null}
-
-            <div className="invite-option">
-              <button className="secondary-button" type="button" onClick={inviteViaWhatsApp}>
-                <MessageSquare size={16} />
-                Invite via WhatsApp
-              </button>
-            </div>
-
-            <div className="invite-option">
-              <h5>Invite via Unique Code</h5>
-              <div className="invite-row invite-row-code">
-                <span className="room-code-pill">{roomCode}</span>
-                <button className="icon-action" type="button" onClick={copyRoomCode}>
-                  <Clipboard size={16} />
+            <div className="room-settings-room-list">
+              {rooms.map((item) => (
+                <button
+                  key={item._id}
+                  className={`room-settings-room-item ${item._id === room?._id ? "active" : ""}`}
+                  type="button"
+                  onClick={() => openRoom(item._id)}
+                >
+                  <span className="room-settings-room-avatar">
+                    {item.avatarUrl ? <img src={item.avatarUrl} alt="" /> : <span>{getRoomInitials(item.name)}</span>}
+                  </span>
+                  <span className="room-settings-room-copy">
+                    <strong>{item.name}</strong>
+                    <small>{item.onlineCount || 0} online</small>
+                  </span>
                 </button>
-              </div>
+              ))}
             </div>
           </section>
 
-          {invites.length ? (
-            <section className="room-settings-drawer-card">
-              <div className="room-settings-drawer-card-head">
-                <span className="room-settings-page-eyebrow">Pending</span>
-                <h4>Pending Invites</h4>
-              </div>
-              <div className="invite-list">
-                {invites.map((invite) => (
-                  <div className="invite-pill" key={invite.email}>
-                    <strong>{invite.invitedName || invite.email}</strong>
-                    <span>{invite.email}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
+          <section className="room-settings-drawer-card">
+            <div className="room-settings-drawer-card-head">
+              <span className="room-settings-page-eyebrow">Create</span>
+              <h4>Create Study Room</h4>
+            </div>
+            <div className="room-settings-create-grid room-settings-drawer-grid">
+              <label className="planner-field room-settings-field room-settings-create-field">
+                <span>Room Name</span>
+                <div className="account-input-shell">
+                  <Plus size={16} />
+                  <input
+                    type="text"
+                    value={createRoomForm.name}
+                    onChange={(event) => setCreateRoomForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Enter a new room name"
+                  />
+                </div>
+              </label>
+
+              <label className="planner-field room-settings-field room-settings-create-field">
+                <span>Invite Friends</span>
+                <div className="account-input-shell">
+                  <MessageSquare size={16} />
+                  <input
+                    type="text"
+                    value={createRoomForm.inviteEmails}
+                    onChange={(event) => setCreateRoomForm((current) => ({ ...current, inviteEmails: event.target.value }))}
+                    placeholder="Add emails separated by commas"
+                  />
+                </div>
+              </label>
+            </div>
+            <button className="primary-button compact room-settings-create-trigger" type="button" onClick={createStudyRoom} disabled={isCreatingRoom || !createRoomForm.name.trim()}>
+              <Plus size={16} />
+              {isCreatingRoom ? "Creating..." : "Create Study Room"}
+            </button>
+          </section>
 
           <section className="room-settings-drawer-card">
             <div className="room-settings-drawer-card-head">
@@ -1235,51 +1286,44 @@ function StudyHubPage() {
       <div className={`study-hub-layout ${isRoomSettingsOpen ? "study-hub-layout-split" : ""}`}>
         <section className="hub-chat-panel">
           <div className="hub-header">
-            <div className="hub-title-block">
-              <div className="hub-room-identity">
-                <button
-                  className="hub-room-avatar hub-room-avatar-button"
-                  type="button"
-                  onClick={() => setIsRoomSettingsOpen(true)}
-                  aria-label="Open room settings"
-                  title="Open room settings"
-                >
-                  {room.avatarUrl ? <img src={room.avatarUrl} alt="" /> : <span>{getRoomInitials(room.name)}</span>}
-                  <span className="hub-room-avatar-badge">
-                    <Camera size={12} />
-                  </span>
-                </button>
-                <div>
-                  <div className="panel-title">
-                    <Users size={18} />
-                    <span className="hub-kicker">{room.subject || "Group study"}</span>
-                  </div>
-                  <div>
-                    <h2>{room.name}</h2>
-                    <p>{room.onlineCount || 3} online</p>
-                  </div>
-                </div>
+            <div className="hub-room-identity">
+              <button
+                className="hub-room-avatar hub-room-avatar-button"
+                type="button"
+                onClick={() => setIsRoomSettingsOpen(true)}
+                aria-label="Open room settings"
+                title="Open room settings"
+              >
+                {room.avatarUrl ? <img src={room.avatarUrl} alt="" /> : <span>{getRoomInitials(room.name)}</span>}
+                <span className="hub-room-avatar-badge">
+                  <Camera size={12} />
+                </span>
+              </button>
+              <div className="hub-room-text">
+                <span className="hub-kicker">
+                  <Users size={13} />
+                  {room.subject || "Group study"}
+                </span>
+                <h2 title={room.name}>{room.name}</h2>
+                <p>
+                  <span className="hub-online-dot" aria-hidden="true" />
+                  {room.onlineCount || 3} online &middot; {members.length} member{members.length === 1 ? "" : "s"}
+                </p>
               </div>
             </div>
             <div className="hub-header-actions">
-              <button className="call-toggle chat-expand-toggle" type="button" onClick={() => setIsChatExpanded(true)}>
-                <span className="call-toggle-icon">
-                  <Maximize2 size={16} />
-                </span>
-                <span className="call-toggle-copy">
-                  <strong>Full Chat</strong>
-                  <small>Open</small>
-                </span>
+              <button className={`hub-action ${isRoomSettingsOpen ? "hub-action-active" : ""}`} type="button" onClick={() => setIsRoomSettingsOpen((current) => !current)} aria-pressed={isRoomSettingsOpen}>
+                <Settings size={16} />
+                <span>Room Settings</span>
               </button>
-              <div className="call-toolbar">
-                <button className={`call-toggle ${activeCall ? "call-toggle-active" : ""}`} type="button" onClick={openCallScreen}>
-                  <span className="call-toggle-icon">{activeCall ? <Mic size={16} /> : <Video size={16} />}</span>
-                  <span className="call-toggle-copy">
-                    <strong>Call</strong>
-                    <small>{activeCall ? "Open" : "Join"}</small>
-                  </span>
-                </button>
-              </div>
+              <button className="hub-action" type="button" onClick={() => setIsChatExpanded(true)}>
+                <Maximize2 size={16} />
+                <span>Full Chat</span>
+              </button>
+              <button className={`hub-action hub-action-call ${activeCall ? "hub-action-live" : ""}`} type="button" onClick={openCallScreen}>
+                {activeCall ? <Mic size={16} /> : <Video size={16} />}
+                <span>{activeCall ? "In Call" : "Join Call"}</span>
+              </button>
             </div>
           </div>
 
@@ -1356,7 +1400,6 @@ function StudyHubPage() {
           <section className={`chatbox-page-panel ${isExpandedRoomSettingsOpen ? "chatbox-page-panel-split" : ""}`}>
             <div className="chatbox-page-main">
               <div className="hub-header chatbox-page-header">
-                <div className="hub-title-block">
                 <div className="hub-room-identity">
                   <button
                     className="hub-room-avatar hub-room-avatar-button"
@@ -1367,57 +1410,43 @@ function StudyHubPage() {
                   >
                     {room.avatarUrl ? <img src={room.avatarUrl} alt="" /> : <span>{getRoomInitials(room.name)}</span>}
                   </button>
-                  <div>
-                    <div className="panel-title">
-                      <Users size={18} />
-                      <span className="hub-kicker">{room.subject || "Group study"}</span>
-                    </div>
-                    <div>
-                      <h2>{room.name}</h2>
-                      <p>{room.onlineCount || 3} online</p>
-                    </div>
+                  <div className="hub-room-text">
+                    <span className="hub-kicker">
+                      <Users size={13} />
+                      {room.subject || "Group study"}
+                    </span>
+                    <h2 title={room.name}>{room.name}</h2>
+                    <p>
+                      <span className="hub-online-dot" aria-hidden="true" />
+                      {room.onlineCount || 3} online &middot; {members.length} member{members.length === 1 ? "" : "s"}
+                    </p>
                   </div>
                 </div>
-              </div>
-              <div className="hub-header-actions">
-                <button className="call-toggle" type="button" onClick={() => setIsExpandedRoomSettingsOpen(true)}>
-                  <span className="call-toggle-icon">
+                <div className="hub-header-actions">
+                  <button className={`hub-action ${isExpandedRoomSettingsOpen ? "hub-action-active" : ""}`} type="button" onClick={() => setIsExpandedRoomSettingsOpen((current) => !current)} aria-pressed={isExpandedRoomSettingsOpen}>
                     <Settings size={16} />
-                  </span>
-                  <span className="call-toggle-copy">
-                    <strong>Room Settings</strong>
-                    <small>Open</small>
-                  </span>
-                </button>
-                <button className="call-toggle chat-expand-toggle" type="button" onClick={() => setIsChatExpanded(false)}>
-                  <span className="call-toggle-icon">
+                    <span>Room Settings</span>
+                  </button>
+                  <button className="hub-action" type="button" onClick={() => setIsChatExpanded(false)}>
                     <Minimize2 size={16} />
-                  </span>
-                  <span className="call-toggle-copy">
-                    <strong>Full Chat</strong>
-                    <small>Close</small>
-                  </span>
-                </button>
-                <div className="call-toolbar">
-                  <button className={`call-toggle ${activeCall ? "call-toggle-active" : ""}`} type="button" onClick={openCallScreen}>
-                    <span className="call-toggle-icon">{activeCall ? <Mic size={16} /> : <Video size={16} />}</span>
-                    <span className="call-toggle-copy">
-                      <strong>Call</strong>
-                      <small>{activeCall ? "Open" : "Join"}</small>
-                    </span>
+                    <span>Exit Full Chat</span>
+                  </button>
+                  <button className={`hub-action hub-action-call ${activeCall ? "hub-action-live" : ""}`} type="button" onClick={openCallScreen}>
+                    {activeCall ? <Mic size={16} /> : <Video size={16} />}
+                    <span>{activeCall ? "In Call" : "Join Call"}</span>
+                  </button>
+                  <button
+                    className="icon-action"
+                    type="button"
+                    aria-label="Close full chat"
+                    onClick={() => {
+                      setIsExpandedRoomSettingsOpen(false);
+                      setIsChatExpanded(false);
+                    }}
+                  >
+                    <X size={18} />
                   </button>
                 </div>
-                <button
-                  className="icon-action"
-                  type="button"
-                  onClick={() => {
-                    setIsExpandedRoomSettingsOpen(false);
-                    setIsChatExpanded(false);
-                  }}
-                >
-                  <X size={18} />
-                </button>
-              </div>
               </div>
               {permissionError && <div className="error-banner">{permissionError}</div>}
 
@@ -1485,6 +1514,52 @@ function StudyHubPage() {
             </div>
             {isExpandedRoomSettingsOpen ? renderRoomSettingsContent({ onClose: () => setIsExpandedRoomSettingsOpen(false), className: "chatbox-room-settings-drawer" }) : null}
           </section>
+        </div>
+      ) : null}
+
+      {linkInvite ? (
+        <div className="hub-join-overlay" role="dialog" aria-modal="true" aria-labelledby="hub-join-title">
+          <div className="hub-join-card">
+            {linkInvite.error ? (
+              <>
+                <h3 id="hub-join-title">Invite link problem</h3>
+                <p>{linkInvite.error}</p>
+                <div className="hub-join-actions">
+                  <button className="primary-button" type="button" onClick={dismissLinkInvite}>
+                    Go to Study Hub
+                  </button>
+                </div>
+              </>
+            ) : !linkInvite.room ? (
+              <>
+                <h3 id="hub-join-title">Opening invite...</h3>
+                <p>Checking the study room you were invited to.</p>
+              </>
+            ) : (
+              <>
+                <span className="hub-room-avatar hub-room-avatar-large">
+                  {linkInvite.room.avatarUrl ? <img src={linkInvite.room.avatarUrl} alt="" /> : <span>{getRoomInitials(linkInvite.room.name)}</span>}
+                </span>
+                <span className="hub-kicker">
+                  <UserPlus size={13} />
+                  {linkInvite.alreadyMember ? "You're already a member" : "You're invited"}
+                </span>
+                <h3 id="hub-join-title">{linkInvite.room.name}</h3>
+                <p>
+                  {linkInvite.room.ownerName ? `Created by ${linkInvite.room.ownerName} · ` : ""}
+                  {linkInvite.room.memberCount} member{linkInvite.room.memberCount === 1 ? "" : "s"}
+                </p>
+                <div className="hub-join-actions">
+                  <button className="primary-button" type="button" onClick={joinRoomFromLink} disabled={isJoiningByLink}>
+                    {isJoiningByLink ? "Joining..." : linkInvite.alreadyMember ? "Open Room" : "Join Room"}
+                  </button>
+                  <button className="secondary-button" type="button" onClick={dismissLinkInvite} disabled={isJoiningByLink}>
+                    Not now
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       ) : null}
 

@@ -29,6 +29,8 @@ const chatRoomSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     subject: { type: String, default: "General", trim: true },
     avatarUrl: { type: String, default: "", trim: true },
+    // Secret part of the shareable invite link; anyone holding it can join the room.
+    inviteCode: { type: String, index: true, sparse: true },
     onlineCount: { type: Number, default: 0 },
     members: { type: [roomMemberSchema], default: [] },
     invites: { type: [roomInviteSchema], default: [] }

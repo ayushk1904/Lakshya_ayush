@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import { useAuth } from "../context/AuthContext";
+import { consumeAfterLoginPath } from "../utils/afterLogin";
 import BrandLogo from "../components/BrandLogo";
 
 function RegisterPage() {
@@ -18,7 +19,7 @@ function RegisterPage() {
 
     try {
       await register(form);
-      navigate("/app/dashboard");
+      navigate(consumeAfterLoginPath());
     } catch (submitError) {
       setError(submitError.message);
     } finally {

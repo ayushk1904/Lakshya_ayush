@@ -103,6 +103,8 @@ export const chatApi = {
   inviteByEmail: (roomId, payload) =>
     apiRequest(`/chat-rooms/${roomId}/invitations`, { method: "POST", body: JSON.stringify(payload) }),
   listInvitations: () => apiRequest(`/chat-rooms/invitations`),
+  previewJoin: (code) => apiRequest(`/chat-rooms/join/${encodeURIComponent(code)}`),
+  joinByCode: (code) => apiRequest(`/chat-rooms/join/${encodeURIComponent(code)}`, { method: "POST" }),
   acceptInvitation: (roomId) => apiRequest(`/chat-rooms/${roomId}/invitations/accept`, { method: "POST" }),
   rejectInvitation: (roomId) => apiRequest(`/chat-rooms/${roomId}/invitations/reject`, { method: "POST" })
 };
