@@ -412,10 +412,15 @@ export const answerEvaluatorApi = {
     })
 };
 
-const PRACTICE_AI_URL = import.meta.env.VITE_PRACTICE_AI_URL?.trim() || "http://localhost:5000";
+// The local practice-test model only exists on a developer machine; in production every call goes to the backend.
+const PRACTICE_AI_URL = import.meta.env.VITE_PRACTICE_AI_URL?.trim() || (import.meta.env.DEV ? "http://localhost:5000" : "");
 const PRACTICE_PAPER_HIDDEN_STORAGE_KEY = "lakshya_hidden_practice_papers";
 
 async function practiceAiRequest(path, options = {}) {
+  if (!PRACTICE_AI_URL) {
+    throw new Error("Practice test model is not configured");
+  }
+
   const response = await fetch(`${PRACTICE_AI_URL}${path}`, options);
   const data = await response.json().catch(() => ({}));
 
