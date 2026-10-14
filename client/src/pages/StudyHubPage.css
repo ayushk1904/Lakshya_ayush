@@ -81,6 +81,11 @@
   overflow-y: auto !important;
 }
 
+body.hub-full-chat-open .nav-hide-button,
+body.hub-call-open .nav-hide-button {
+  display: none !important;
+}
+
 /* Full Chat: one row that fills the overlay; the settings drawer sits beside it when open. */
 .study-hub-screen .chatbox-page-panel {
   grid-template-rows: minmax(0, 1fr);

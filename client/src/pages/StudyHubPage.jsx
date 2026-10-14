@@ -267,11 +267,27 @@ function StudyHubPage() {
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // The sidebar's hide-navbar button stacks above page content, so hide it while Full Chat covers the screen.
+    document.body.classList.add("hub-full-chat-open");
 
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("hub-full-chat-open");
     };
   }, [isChatExpanded]);
+
+  // Same for the voice/video call screen, tracked separately so closing one overlay doesn't reveal the button under the other.
+  useEffect(() => {
+    if (!activeCall) {
+      return undefined;
+    }
+
+    document.body.classList.add("hub-call-open");
+
+    return () => {
+      document.body.classList.remove("hub-call-open");
+    };
+  }, [activeCall]);
 
   // Keep both the inline chat and Full Chat pinned to the newest message.
   useEffect(() => {
