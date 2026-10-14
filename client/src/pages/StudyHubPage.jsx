@@ -68,6 +68,7 @@ function StudyHubPage() {
   const roomAvatarInputRef = useRef(null);
   const isEditingRoomSettingsRef = useRef(false);
   const messageListRef = useRef(null);
+  const expandedMessageListRef = useRef(null);
 
   function isMongoRoomId(value) {
     return /^[a-f\d]{24}$/i.test(String(value || "").trim());
@@ -272,12 +273,17 @@ function StudyHubPage() {
     };
   }, [isChatExpanded]);
 
+  // Keep both the inline chat and Full Chat pinned to the newest message.
   useEffect(() => {
-    if (!messageListRef.current) {
-      return;
-    }
+    const frame = window.requestAnimationFrame(() => {
+      [messageListRef.current, expandedMessageListRef.current].forEach((list) => {
+        if (list) {
+          list.scrollTop = list.scrollHeight;
+        }
+      });
+    });
 
-    messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+    return () => window.cancelAnimationFrame(frame);
   }, [messages, isChatExpanded, room?._id]);
 
   async function sendMessage() {
@@ -807,9 +813,9 @@ function StudyHubPage() {
     return String(message.practiceInvite?.invitedByEmail || "").trim().toLowerCase() === String(user?.email || "").trim().toLowerCase();
   }
 
-  function renderMessages(listClassName = "message-list") {
+  function renderMessages(listClassName = "message-list", listRef = messageListRef) {
     return (
-      <div ref={messageListRef} className={listClassName}>
+      <div ref={listRef} className={listClassName}>
         {messages.map((message) => (
           <div className={`message-row ${message.kind === "reaction" ? "message-row-reaction" : ""}`} key={message._id}>
             <div className={`avatar ${getMessageAvatar(message).kind === "ai" ? "ai-avatar" : ""}`}>
@@ -1450,7 +1456,7 @@ function StudyHubPage() {
               </div>
               {permissionError && <div className="error-banner">{permissionError}</div>}
 
-              {renderMessages("message-list chatbox-page-messages")}
+              {renderMessages("message-list chatbox-page-messages", expandedMessageListRef)}
 
               {replyTarget ? (
                 <div className="reply-composer">

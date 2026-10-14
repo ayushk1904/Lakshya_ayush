@@ -55,6 +55,41 @@
 
 /* ---------- Study Hub: clean alignment pass ---------- */
 
+/*
+ * Chat columns stack header -> messages -> composer. A flex column (not fixed grid rows) keeps the
+ * message list as the only flexible, scrollable part even when optional bars (error, reply,
+ * attachments) appear.
+ */
+.study-hub-screen .hub-chat-panel,
+.study-hub-screen .chatbox-page-main {
+  display: flex !important;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.study-hub-screen .hub-chat-panel > *,
+.study-hub-screen .chatbox-page-main > * {
+  flex: 0 0 auto;
+}
+
+.study-hub-screen .hub-chat-panel > .message-list,
+.study-hub-screen .chatbox-page-main > .message-list {
+  flex: 1 1 auto;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+/* Full Chat: one row that fills the overlay; the settings drawer sits beside it when open. */
+.study-hub-screen .chatbox-page-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.study-hub-screen .chatbox-page-panel > * {
+  min-height: 0;
+}
+
 /* Header: one tidy row — identity on the left, actions on the right. */
 .study-hub-screen .hub-header {
   padding: 14px 20px;
