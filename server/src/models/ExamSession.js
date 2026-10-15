@@ -18,6 +18,8 @@ const examSessionSchema = new mongoose.Schema(
     generatedTest: { type: String, default: "" },
     callAcceptedAt: Date,
     lastAlert: { type: String, default: "" },
+    warningCount: { type: Number, default: 0 },
+    declinedAt: Date,
     sharedInviteId: { type: String, default: "", index: true },
     sharedOriginSessionId: { type: mongoose.Schema.Types.ObjectId, ref: "ExamSession", default: null },
     sharedRoomId: { type: mongoose.Schema.Types.ObjectId, ref: "ChatRoom", default: null },

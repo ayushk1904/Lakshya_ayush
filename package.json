@@ -7,7 +7,9 @@
     "server": "npm --prefix server run dev",
     "build": "npm --prefix client run build",
     "planner": "python -m uvicorn main:app --app-dir planner-ai --port 8001",
-    "planner:dev": "python -m uvicorn main:app --app-dir planner-ai --port 8001 --reload --reload-dir planner-ai"
+    "planner:dev": "python -m uvicorn main:app --app-dir planner-ai --port 8001 --reload --reload-dir planner-ai",
+    "proctor": "python -m uvicorn main:app --app-dir proctor-ai --port 8002",
+    "proctor:dev": "python -m uvicorn main:app --app-dir proctor-ai --port 8002 --reload --reload-dir proctor-ai"
   },
   "dependencies": {
     "mermaid": "^10.9.5",

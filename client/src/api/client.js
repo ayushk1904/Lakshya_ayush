@@ -671,9 +671,12 @@ export const examApi = {
   start: (payload) => apiRequest("/exam-sessions/start", { method: "POST", body: JSON.stringify(payload) }),
   autoStartSession: (sessionId) => apiRequest(`/exam-sessions/${sessionId}/auto-start`, { method: "POST" }),
   acceptCall: (sessionId) => apiRequest(`/exam-sessions/${sessionId}/accept-call`, { method: "POST" }),
+  declineCall: (sessionId) => apiRequest(`/exam-sessions/${sessionId}/decline-call`, { method: "POST" }),
   deleteSession: (sessionId) => apiRequest(`/exam-sessions/${sessionId}`, { method: "DELETE" }),
   shareToRoom: (sessionId, payload) =>
     apiRequest(`/exam-sessions/${sessionId}/share-to-room`, { method: "POST", body: JSON.stringify(payload) }),
+  proctorFrame: (sessionId, payload) =>
+    apiRequest(`/exam-sessions/${sessionId}/proctor-frame`, { method: "POST", body: JSON.stringify(payload) }),
   proctorAlert: (sessionId, payload) =>
     apiRequest(`/exam-sessions/${sessionId}/proctor-alert`, { method: "POST", body: JSON.stringify(payload) }),
   finishSession: (sessionId, payload) =>

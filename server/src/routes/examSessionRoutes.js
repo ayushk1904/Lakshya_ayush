@@ -7,6 +7,7 @@ const ExamSession = require("../models/ExamSession");
 const PreviousPaper = require("../models/PreviousPaper");
 const ChatRoom = require("../models/ChatRoom");
 const ChatMessage = require("../models/ChatMessage");
+const { analyzeFrame } = require("../services/proctorAiClient");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -456,6 +457,7 @@ function serializeSession(session) {
     generatedTest: session.generatedTest || "",
     callAcceptedAt: session.callAcceptedAt,
     lastAlert: session.lastAlert || "",
+    warningCount: session.warningCount || 0,
     sharedInviteId: session.sharedInviteId || "",
     sharedRoomId: session.sharedRoomId || "",
     sharedByName: session.sharedByName || "",
@@ -976,6 +978,25 @@ router.post("/:sessionId/accept-call", async (req, res) => {
   return res.json({ session: serializeSession(session) });
 });
 
+// The student declined the incoming test call: the test is skipped and stops ringing.
+router.post("/:sessionId/decline-call", async (req, res) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.json({ session: { ...exams[0], status: "declined" } });
+  }
+
+  const session = await ExamSession.findOneAndUpdate(
+    { _id: req.params.sessionId, userId: req.user._id, status: "scheduled" },
+    { status: "declined", declinedAt: new Date(), endedAt: new Date(), lastAlert: "You declined the test call." },
+    { new: true }
+  );
+
+  if (!session) {
+    return res.status(404).json({ message: "No ringing test found to decline." });
+  }
+
+  return res.json({ session: serializeSession(session) });
+});
+
 router.post("/:sessionId/auto-start", async (req, res) => {
   if (mongoose.connection.readyState !== 1) {
     return res.json({
@@ -1178,6 +1199,40 @@ router.post("/invites/:inviteId/join", async (req, res) => {
   });
 });
 
+// One webcam frame from the live proctor call -> computer-vision verdict from the proctor-ai service.
+// Frames are forwarded in memory only; nothing is stored.
+router.post("/:sessionId/proctor-frame", async (req, res) => {
+  const image = typeof req.body.image === "string" ? req.body.image : "";
+  const baseline = req.body.baseline && typeof req.body.baseline === "object" ? req.body.baseline : null;
+
+  if (!image.startsWith("data:image/") || image.length > 3 * 1024 * 1024) {
+    return res.status(400).json({ message: "Send one JPEG frame as a data URL (under 2 MB)." });
+  }
+
+  if (mongoose.connection.readyState === 1) {
+    if (!mongoose.Types.ObjectId.isValid(req.params.sessionId)) {
+      return res.status(404).json({ message: "Active session not found" });
+    }
+
+    const session = await ExamSession.findOne({ _id: req.params.sessionId, userId: req.user._id }).select("status").lean();
+    if (!session || session.status !== "active") {
+      return res.status(404).json({ message: "Active session not found" });
+    }
+  }
+
+  try {
+    const result = await analyzeFrame({
+      image,
+      baseline: baseline && Number.isFinite(Number(baseline.yaw)) && Number.isFinite(Number(baseline.pitch))
+        ? { yaw: Number(baseline.yaw), pitch: Number(baseline.pitch) }
+        : null
+    });
+    return res.json({ result });
+  } catch (error) {
+    return res.status(error.status || 502).json({ message: error.message });
+  }
+});
+
 router.post("/:sessionId/proctor-alert", async (req, res) => {
   const message = String(req.body.message || "No cheating, focus on your paper.").trim();
   const attentionScore = Math.max(40, Math.min(99, Number(req.body.attentionScore || 82)));
@@ -1194,7 +1249,7 @@ router.post("/:sessionId/proctor-alert", async (req, res) => {
 
   const session = await ExamSession.findOneAndUpdate(
     { _id: req.params.sessionId, userId: req.user._id },
-    { attentionScore, lastAlert: message },
+    { attentionScore, lastAlert: message, $inc: { warningCount: 1 } },
     { new: true }
   );
 

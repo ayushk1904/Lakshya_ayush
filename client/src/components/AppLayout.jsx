@@ -16,7 +16,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import useStudyTimeTracker from "../hooks/useStudyTimeTracker";
-import AutoStartProctorRedirect from "./AutoStartProctorRedirect";
+import IncomingTestCall from "./IncomingTestCall";
 import BrandLogo from "./BrandLogo";
 import ThemeSwitcher from "./ThemeSwitcher";
 
@@ -66,7 +66,7 @@ function AppLayout() {
 
   return (
     <div className={`app-shell ${isHubRoute ? "app-shell-hub" : ""} ${isNavbarHidden ? "app-shell-nav-hidden" : ""}`}>
-      <AutoStartProctorRedirect />
+      <IncomingTestCall />
       <div className="shell-glow shell-glow-left" aria-hidden="true" />
       <div className="shell-glow shell-glow-right" aria-hidden="true" />
       <button

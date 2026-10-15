@@ -33,6 +33,10 @@ services:
         sync: false
       - key: PLANNER_AI_TOKEN
         sync: false
+      - key: PROCTOR_AI_URL
+        sync: false
+      - key: PROCTOR_AI_TOKEN
+        sync: false
   - type: web
     name: lakshya-planner-ai
     runtime: python
@@ -48,4 +52,18 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-20b
       - key: PLANNER_AI_TOKEN
+        sync: false
+  - type: web
+    name: lakshya-proctor-ai
+    runtime: python
+    plan: free
+    region: singapore
+    rootDir: proctor-ai
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: PROCTOR_AI_TOKEN
         sync: false

@@ -24,6 +24,13 @@ function formatStartTime(value) {
   }).format(date);
 }
 
+const SESSION_STATUS_LABELS = {
+  active: "In progress",
+  completed: "Completed",
+  left: "Left early",
+  declined: "Declined"
+};
+
 function isSampleScheduledTest(session) {
   const title = String(session?.title || "").trim().toLowerCase();
   const date = String(session?.date || "").trim().toLowerCase();
@@ -142,6 +149,11 @@ function PracticeTestsPage() {
   }
 
   async function generateTest() {
+    // Ask now, during the click, so the test call can also ring as a desktop notification later.
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+
     setGenerating(true);
     setStatus("");
 
@@ -330,7 +342,12 @@ function PracticeTestsPage() {
                   upcomingSessions.map((session) => (
                     <div className="exam-card" key={session._id || session.title}>
                       <div>
-                        <strong>{session.title}</strong>
+                        <strong>
+                          {session.title}
+                          {SESSION_STATUS_LABELS[session.status] ? (
+                            <span className={`practice-status-pill is-${session.status}`}>{SESSION_STATUS_LABELS[session.status]}</span>
+                          ) : null}
+                        </strong>
                         <p>{formatStartTime(session.startAt || session.date)}</p>
                       </div>
                       <div className="practice-scheduled-meta">
@@ -360,7 +377,7 @@ function PracticeTestsPage() {
                   <p className="muted-copy">No scheduled tests yet.</p>
                 )}
               </div>
-              <p className="muted-copy practice-preview-note">Generated papers stay hidden here and will open automatically in AI Proctor at the scheduled time.</p>
+              <p className="muted-copy practice-preview-note">Generated papers stay hidden here. At the scheduled time Lakshya calls you with a ringtone. Accept the call to start the proctored test.</p>
               {studyRooms.length ? (
                 <p className="muted-copy practice-preview-note practice-share-note">
                   <Users size={14} /> Invite the selected study room and your friends will get a join button in chat for the same test timing.
