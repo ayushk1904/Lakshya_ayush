@@ -415,7 +415,9 @@ export const answerEvaluatorApi = {
 };
 
 // The local practice-test model only exists on a developer machine; in production every call goes to the backend.
-const PRACTICE_AI_URL = import.meta.env.VITE_PRACTICE_AI_URL?.trim() || (import.meta.env.DEV ? "http://localhost:5000" : "");
+// Optional external practice-test model. Unset by default so papers go through the backend's
+// paper RAG (OCR, figures, tables, same-format generation).
+const PRACTICE_AI_URL = import.meta.env.VITE_PRACTICE_AI_URL?.trim() || "";
 const PRACTICE_PAPER_HIDDEN_STORAGE_KEY = "lakshya_hidden_practice_papers";
 
 async function practiceAiRequest(path, options = {}) {
@@ -444,7 +446,12 @@ function normalizePaperRecord(paper = {}, index = 0) {
     fileName: paper.fileName || paper.filename || `Uploaded paper ${index + 1}`,
     mimeType: paper.mimeType || "application/pdf",
     uploadedAt: paper.uploadedAt || paper.createdAt || null,
-    diagramCount: paper.diagramCount || 0
+    diagramCount: paper.diagramCount || 0,
+    subject: paper.subject || "",
+    analysed: Boolean(paper.analysed),
+    questionCount: paper.questionCount || 0,
+    tableCount: paper.tableCount || 0,
+    ocrPages: paper.ocrPages || 0
   };
 }
 
@@ -560,7 +567,8 @@ export const examApi = {
         papers: (data.papers || (data.paper ? [data.paper] : [])).map((paper, index) => normalizePaperRecord(paper, index)).map((paper) => {
           unhidePracticePaper(paper);
           return paper;
-        })
+        }),
+        warning: data.warning || ""
       };
     }
   },

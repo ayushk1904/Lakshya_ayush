@@ -16,6 +16,8 @@ const examSessionSchema = new mongoose.Schema(
     endedAt: Date,
     paperIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "PreviousPaper" }],
     generatedTest: { type: String, default: "" },
+    // Structured paper (same layout as the uploaded papers) rendered by the proctor page.
+    generatedPaper: { type: mongoose.Schema.Types.Mixed, default: null },
     callAcceptedAt: Date,
     lastAlert: { type: String, default: "" },
     warningCount: { type: Number, default: 0 },

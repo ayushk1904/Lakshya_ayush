@@ -20,7 +20,15 @@ const previousPaperSchema = new mongoose.Schema(
         pageNumber: { type: Number, required: true },
         text: { type: String, required: true }
       }
-    ]
+    ],
+    // Filled by the planner-ai paper RAG: questions with numbering/marks/types, data tables, and
+    // how the text was read ("ocr" pages for PDFs whose text layer is unreadable).
+    subject: { type: String, default: "" },
+    structure: { type: mongoose.Schema.Types.Mixed, default: null },
+    structureMethod: { type: String, default: "" },
+    tables: { type: mongoose.Schema.Types.Mixed, default: [] },
+    ocrPages: { type: Number, default: 0 },
+    pageCount: { type: Number, default: 0 }
   },
   { timestamps: true }
 );

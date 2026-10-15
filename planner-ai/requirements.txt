@@ -3,3 +3,7 @@ uvicorn>=0.30
 httpx>=0.27
 python-dotenv>=1.0
 pydantic>=2.7
+numpy>=2.0
+pymupdf>=1.24
+rapidocr>=3.0
+onnxruntime>=1.18

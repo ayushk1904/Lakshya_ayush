@@ -1,8 +1,10 @@
 import { BellRing, Camera, Mic, ScanEye, ScanFace, Users, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useNavigate } from "react-router-dom";
 import { examApi, trackStudyEvent } from "../api/client";
+import ExamPaper from "../components/ExamPaper";
 import { useAuth } from "../context/AuthContext";
 
 const ALERT_LINES = [
@@ -643,9 +645,13 @@ function ProctorPage() {
                 <h2>{session.title}</h2>
                 <p>{`${session.marks || 80} marks | ${session.durationMinutes || 60} minutes | Accepted ${formatStartTime(session.callAcceptedAt || session.startAt)}`}</p>
               </div>
-              {session.generatedTest ? (
+              {session.generatedPaper?.questions?.length ? (
+                <div className="proctor-paper-content">
+                  <ExamPaper paper={session.generatedPaper} />
+                </div>
+              ) : session.generatedTest ? (
                 <div className="explainer-markdown practice-markdown practice-paper-preview proctor-paper-content">
-                  <ReactMarkdown>{session.generatedTest}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{session.generatedTest}</ReactMarkdown>
                 </div>
               ) : (
                 <div className="explainer-markdown practice-markdown practice-paper-preview proctor-paper-content">

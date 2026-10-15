@@ -6,10 +6,10 @@
     "client": "npm --prefix client run dev",
     "server": "npm --prefix server run dev",
     "build": "npm --prefix client run build",
-    "planner": "python -m uvicorn main:app --app-dir planner-ai --port 8001",
-    "planner:dev": "python -m uvicorn main:app --app-dir planner-ai --port 8001 --reload --reload-dir planner-ai",
-    "proctor": "python -m uvicorn main:app --app-dir proctor-ai --port 8002",
-    "proctor:dev": "python -m uvicorn main:app --app-dir proctor-ai --port 8002 --reload --reload-dir proctor-ai"
+    "planner": "node scripts/run-python-service.js planner-ai 8001",
+    "planner:dev": "node scripts/run-python-service.js planner-ai 8001 --reload",
+    "proctor": "node scripts/run-python-service.js proctor-ai 8002",
+    "proctor:dev": "node scripts/run-python-service.js proctor-ai 8002 --reload"
   },
   "dependencies": {
     "mermaid": "^10.9.5",

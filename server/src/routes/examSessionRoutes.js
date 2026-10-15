@@ -8,6 +8,7 @@ const PreviousPaper = require("../models/PreviousPaper");
 const ChatRoom = require("../models/ChatRoom");
 const ChatMessage = require("../models/ChatMessage");
 const { analyzeFrame } = require("../services/proctorAiClient");
+const { generatePracticeTest, ingestPaper } = require("../services/plannerAiClient");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -370,7 +371,12 @@ function serializePaper(document) {
     fileName: document.fileName,
     mimeType: document.mimeType,
     uploadedAt: document.createdAt,
-    diagramCount: document.extractedImages?.length || 0
+    diagramCount: document.extractedImages?.length || 0,
+    subject: document.subject || "",
+    analysed: Boolean(document.structure?.questions?.length),
+    questionCount: (document.structure?.questions || []).reduce((sum, question) => sum + (question.parts?.length || 0), 0),
+    tableCount: document.tables?.length || 0,
+    ocrPages: document.ocrPages || 0
   };
 }
 
@@ -455,6 +461,7 @@ function serializeSession(session) {
     endsAt: session.endsAt,
     endedAt: session.endedAt,
     generatedTest: session.generatedTest || "",
+    generatedPaper: session.generatedPaper || null,
     callAcceptedAt: session.callAcceptedAt,
     lastAlert: session.lastAlert || "",
     warningCount: session.warningCount || 0,
@@ -594,6 +601,21 @@ async function loadSharedParticipants(session) {
   return [...uniqueParticipants.values()];
 }
 
+// Structured analysis from the planner-ai paper RAG. PDFs are only stored once analysed: many
+// question-paper PDFs have scrambled text layers, so a plain-text fallback would store gibberish
+// and later generate a nonsense test.
+async function analysePaperPdf(file) {
+  try {
+    return await ingestPaper(file.buffer, file.originalname);
+  } catch (error) {
+    if (error.status === 400) {
+      throw error;
+    }
+    console.error("paper analysis unavailable:", error.message);
+    throw new Error(`the paper analyser is not available right now (${error.message}). Please try again in a minute.`);
+  }
+}
+
 function getUploadedFiles(req) {
   return [...(req.files?.files || []), ...(req.files?.file || []), ...(req.file ? [req.file] : [])];
 }
@@ -618,12 +640,18 @@ router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "
     return res.status(400).json({ message: "Please upload at least one PDF or text file" });
   }
 
-  try {
-    const createdPapers = await Promise.all(files.map(async (file) => {
-      const extractedText = (await extractDocumentText(file)).trim();
+  const createdPapers = [];
+  const warnings = [];
+
+  // One at a time: the analyser OCRs scanned pages and calls the model per paper.
+  for (const file of files) {
+    try {
+      const analysed = file.mimetype === "application/pdf" ? await analysePaperPdf(file) : null;
+      const extractedText = analysed?.layout_text?.trim() || (await extractDocumentText(file)).trim();
 
       if (!extractedText) {
-        throw new Error(`The uploaded paper "${file.originalname}" did not contain readable text`);
+        warnings.push(`"${file.originalname}" did not contain readable text.`);
+        continue;
       }
 
       const paper = await PreviousPaper.create({
@@ -631,21 +659,38 @@ router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "
         fileName: file.originalname,
         mimeType: file.mimetype,
         extractedText,
-        extractedImages: [],
-        pageTexts: []
+        extractedImages: (analysed?.figures || []).map((figure) => ({
+          diagramId: figure.id,
+          pageNumber: figure.page,
+          width: figure.width,
+          height: figure.height,
+          dataUrl: figure.dataUrl
+        })),
+        pageTexts: [],
+        subject: analysed?.structure?.subject || analysed?.meta?.subject || "",
+        structure: analysed?.structure || null,
+        structureMethod: analysed?.structure_method || "",
+        tables: analysed?.tables || [],
+        ocrPages: analysed?.ocr_pages || 0,
+        pageCount: analysed?.page_count || 0
       });
 
-      return serializePaper(paper);
-    }));
-
-    return res.status(201).json({
-      papers: createdPapers,
-      paper: createdPapers[0]
-    });
-  } catch (error) {
-    console.error("practice-paper upload error:", error);
-    return res.status(500).json({ message: error.message || "Failed to process the uploaded paper" });
+      createdPapers.push(serializePaper(paper));
+    } catch (error) {
+      console.error("practice-paper upload error:", error);
+      warnings.push(`"${file.originalname}": ${error.message || "could not be processed"}`);
+    }
   }
+
+  if (!createdPapers.length) {
+    return res.status(400).json({ message: warnings.join(" ") || "None of the uploaded papers could be read." });
+  }
+
+  return res.status(201).json({
+    papers: createdPapers,
+    paper: createdPapers[0],
+    warning: warnings.join(" ")
+  });
 });
 
 router.delete("/papers/:paperId", async (req, res) => {
@@ -739,6 +784,89 @@ router.post("/generate-test", async (req, res) => {
 
   const requestedOrder = new Map(requestedPaperIds.map((paperId, index) => [String(paperId), index]));
   papers.sort((a, b) => (requestedOrder.get(String(a._id)) ?? Number.MAX_SAFE_INTEGER) - (requestedOrder.get(String(b._id)) ?? Number.MAX_SAFE_INTEGER));
+
+  // The planner-ai paper RAG writes a new paper in the exact format of the uploads (numbering,
+  // marks, choices, figures, tables). PDFs uploaded before that existed have only raw text, which
+  // is often scrambled (protected fonts), so they are left out instead of producing a broken test.
+  // Only plain-text uploads still use the original single-prompt generator below.
+  const structuredPapers = papers.filter((paper) => paper.structure?.questions?.length);
+  const legacyPdfs = papers.filter((paper) => !paper.structure?.questions?.length && paper.mimeType === "application/pdf");
+  const textPapers = papers.filter((paper) => !paper.structure?.questions?.length && paper.mimeType !== "application/pdf");
+  const legacyWarning = legacyPdfs.length
+    ? `${legacyPdfs.length} older PDF${legacyPdfs.length === 1 ? " was" : "s were"} skipped; remove and upload ${legacyPdfs.length === 1 ? "it" : "them"} again to include ${legacyPdfs.length === 1 ? "it" : "them"}. `
+    : "";
+
+  if (!structuredPapers.length && !textPapers.length) {
+    return res.status(400).json({
+      message:
+        "The selected papers were uploaded before Lakshya could read question papers properly. Remove them and upload the PDFs again, then generate the test."
+    });
+  }
+
+  if (structuredPapers.length) {
+    try {
+      const result = await generatePracticeTest({
+        papers: structuredPapers.map((paper) => ({
+          id: String(paper._id),
+          structure: paper.structure,
+          figures: (paper.extractedImages || []).map((image) => ({
+            id: image.diagramId,
+            page: image.pageNumber,
+            width: image.width,
+            height: image.height
+          })),
+          tables: paper.tables || []
+        })),
+        title,
+        marks,
+        duration_minutes: durationMinutes
+      });
+
+      const catalog = buildDiagramCatalog(structuredPapers);
+      const figureSources = new Map(catalog.map((diagram) => [diagram.token, diagram.dataUrl]));
+      const generatedPaper = {
+        ...result.paper,
+        questions: (result.paper.questions || []).map((question) => ({
+          ...question,
+          parts: (question.parts || []).map((part) => ({
+            ...part,
+            figure: part.figure && figureSources.has(part.figure) ? { token: part.figure, src: figureSources.get(part.figure) } : null
+          }))
+        }))
+      };
+      const paperMarks = Number(generatedPaper.total_marks) || marks;
+
+      const session = await ExamSession.create({
+        userId: req.user._id,
+        title,
+        date: formatDateTime(startAt),
+        count: buildQuestionCount(paperMarks),
+        mode,
+        status: "scheduled",
+        attentionScore: 92,
+        marks: paperMarks,
+        durationMinutes,
+        startAt,
+        paperIds: structuredPapers.map((paper) => paper._id),
+        generatedTest: sanitizeGeneratedTest(replaceDiagramTokens(result.markdown || "", catalog)),
+        generatedPaper
+      });
+
+      return res.status(201).json({
+        session: serializeSession(session),
+        papers: structuredPapers.map(serializePaper),
+        warning: `${legacyWarning}${(result.warnings || []).join(" ")}`.trim()
+      });
+    } catch (error) {
+      console.error("practice-test RAG generation failed:", error.message);
+      return res.status(error.status === 400 ? 400 : 503).json({
+        message: `The test could not be generated right now (${error.message}). Please try again in a minute.`
+      });
+    }
+  }
+
+  // Only plain-text uploads reach the original generator.
+  papers.splice(0, papers.length, ...textPapers);
 
   const context = papers.map((paper, index) => `Paper ${index + 1}: ${paper.fileName}\n${paper.extractedText.slice(0, 5000)}`).join("\n\n");
   const diagramCatalog = buildDiagramCatalog(papers);
@@ -856,7 +984,7 @@ ${questionImageContext}`
   return res.status(201).json({
     session: serializeSession(session),
     papers: papers.map(serializePaper),
-    warning
+    warning: `${legacyWarning}${warning}`.trim()
   });
 });
 
@@ -1163,6 +1291,9 @@ router.post("/invites/:inviteId/join", async (req, res) => {
     });
   }
 
+  // The structured paper is not copied into chat messages; take it from the shared session.
+  const originSession = invite.sessionId ? await ExamSession.findById(invite.sessionId).select("generatedPaper").lean() : null;
+
   const session = await ExamSession.create({
     userId: req.user._id,
     title: invite.title || "Shared Practice Test",
@@ -1175,6 +1306,7 @@ router.post("/invites/:inviteId/join", async (req, res) => {
     durationMinutes: Number(invite.durationMinutes || 60),
     startAt,
     generatedTest: invite.generatedTest || "",
+    generatedPaper: originSession?.generatedPaper || null,
     sharedInviteId: inviteId,
     sharedOriginSessionId: invite.sessionId,
     sharedRoomId: room._id,

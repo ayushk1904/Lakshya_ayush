@@ -7475,3 +7475,179 @@ button {
   color: #b42318;
   background: color-mix(in srgb, #ef4444 14%, transparent);
 }
+
+/* ---------- Generated exam paper (same layout as the uploaded papers) ---------- */
+.exam-paper {
+  display: grid;
+  gap: 18px;
+  padding: 26px 28px 20px;
+  border-radius: 18px;
+  border: 1px solid var(--stroke);
+  background: var(--panel-strong);
+  color: var(--text);
+  font-family: "Times New Roman", Times, Georgia, serif;
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+
+.exam-paper-header {
+  display: grid;
+  gap: 6px;
+}
+
+.exam-paper-header h3 {
+  margin: 0 0 6px;
+  text-align: center;
+  font-size: 1.15rem;
+  font-family: inherit;
+}
+
+.exam-paper-header-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.exam-paper-instructions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+
+.exam-paper-instructions ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.exam-paper-instructions li {
+  display: flex;
+  gap: 8px;
+}
+
+.exam-paper-questions {
+  display: grid;
+  gap: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--stroke);
+}
+
+.exam-paper-question {
+  display: grid;
+  gap: 8px;
+}
+
+.exam-paper-row {
+  display: grid;
+  grid-template-columns: 3.4rem 2.4rem minmax(0, 1fr) 3rem;
+  gap: 0 8px;
+  align-items: start;
+}
+
+.exam-paper-qlabel {
+  font-weight: 700;
+}
+
+.exam-paper-plabel {
+  font-weight: 600;
+}
+
+.exam-paper-heading {
+  font-weight: 700;
+}
+
+.exam-paper-marks {
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.exam-paper-part-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.exam-paper-part-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.exam-paper-subitems {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.exam-paper-subitems li {
+  display: flex;
+  gap: 10px;
+  padding-left: 12px;
+}
+
+.exam-paper-subitems li span {
+  min-width: 1.8rem;
+}
+
+.exam-paper-figure {
+  margin: 6px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.exam-paper-figure img {
+  max-width: min(100%, 380px);
+  height: auto;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 6px;
+}
+
+.exam-paper-table-wrap {
+  overflow-x: auto;
+}
+
+.exam-paper-table,
+.practice-markdown table {
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 0.95rem;
+}
+
+.exam-paper-table th,
+.exam-paper-table td,
+.practice-markdown th,
+.practice-markdown td {
+  border: 1px solid color-mix(in srgb, var(--text) 45%, transparent);
+  padding: 4px 12px;
+  text-align: center;
+}
+
+.exam-paper-table th,
+.practice-markdown th {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.exam-paper-end {
+  margin: 4px 0 0;
+  text-align: center;
+  color: var(--muted);
+  letter-spacing: 0.2em;
+}
+
+@media (max-width: 640px) {
+  .exam-paper {
+    padding: 18px 14px;
+  }
+
+  .exam-paper-row {
+    grid-template-columns: 2.6rem 2rem minmax(0, 1fr) 2.4rem;
+    gap: 0 4px;
+  }
+}

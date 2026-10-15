@@ -94,7 +94,35 @@ async function buildPlan(payload) {
   return data;
 }
 
+// Previous-year paper PDF -> structured questions, figures and tables (OCR when the PDF's text
+// layer is unreadable, which is common for protected university papers).
+async function ingestPaper(buffer, fileName) {
+  const response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 5 * 60 * 1000);
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const detail = typeof data.detail === "string" ? data.detail : "";
+    const fallback = response.status === 422 ? "This file is not a readable PDF question paper." : `Paper analysis failed (${response.status})`;
+    throw serviceError(detail || fallback, [400, 413, 422].includes(response.status) ? 400 : 502);
+  }
+  return data;
+}
+
+// Structured papers -> a new practice test in the same format (RAG over the selected papers).
+async function generatePracticeTest(payload) {
+  const response = await plannerFetch("/papers/generate", payload, 4 * 60 * 1000);
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const detail = typeof data.detail === "string" ? data.detail : "";
+    throw serviceError(detail || `Practice test generation failed (${response.status})`, response.status === 400 ? 400 : 502);
+  }
+  return data;
+}
+
 module.exports = {
   buildPlan,
+  generatePracticeTest,
+  ingestPaper,
   ingestSyllabus
 };

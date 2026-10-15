@@ -31,6 +31,27 @@ const SESSION_STATUS_LABELS = {
   declined: "Declined"
 };
 
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+// "Analysis of Algorithm · 17 questions · 2 diagrams · read with OCR"
+function describePaper(paper) {
+  if (paper.analysed) {
+    return [
+      paper.subject,
+      plural(paper.questionCount, "question"),
+      paper.diagramCount ? plural(paper.diagramCount, "diagram") : "",
+      paper.tableCount ? plural(paper.tableCount, "table") : "",
+      paper.ocrPages ? "read with OCR" : ""
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  return paper.mimeType === "application/pdf" ? "Older upload, not used for tests. Remove it and upload again." : "Text file uploaded";
+}
+
 function isSampleScheduledTest(session) {
   const title = String(session?.title || "").trim().toLowerCase();
   const date = String(session?.date || "").trim().toLowerCase();
@@ -103,7 +124,7 @@ function PracticeTestsPage() {
     }
 
     setUploading(true);
-    setStatus("");
+    setStatus("Reading your papers: questions, diagrams and tables. Scanned or protected PDFs are read with OCR, which takes about 10 seconds per page.");
 
     try {
       const formData = new FormData();
@@ -115,11 +136,11 @@ function PracticeTestsPage() {
 
       setPapers((current) => [...uploadedPapers, ...current]);
       setSelectedPaperIds((current) => [...uploadedPapers.map((paper) => paper._id), ...current]);
-      setStatus(
+      const summary =
         uploadedPapers.length === 1
-          ? `${uploadedPapers[0].fileName} uploaded for test generation.`
-          : `${uploadedPapers.length} papers uploaded for test generation.`
-      );
+          ? `${uploadedPapers[0].fileName} is ready for test generation.`
+          : `${uploadedPapers.length} papers are ready for test generation.`;
+      setStatus(data.warning ? `${summary} ${data.warning}` : summary);
     } catch (error) {
       setStatus(error.message);
     } finally {
@@ -248,9 +269,7 @@ function PracticeTestsPage() {
                     <button className="practice-paper-main" type="button" onClick={() => togglePaper(paper._id)}>
                       <strong>{paper.fileName}</strong>
                       <span>
-                        {paper.mimeType === "application/pdf"
-                          ? `PDF uploaded${paper.diagramCount ? ` - ${paper.diagramCount} diagram${paper.diagramCount > 1 ? "s" : ""} extracted` : ""}`
-                          : "Text file uploaded"}
+                        {describePaper(paper)}
                       </span>
                     </button>
                     <button className="practice-paper-remove" type="button" aria-label={`Remove ${paper.fileName}`} onClick={() => removePaper(paper)}>
