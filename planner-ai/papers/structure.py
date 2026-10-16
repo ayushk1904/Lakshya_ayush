@@ -56,14 +56,21 @@ algorithm/procedure/code; comparison = differentiate/compare; short_notes = writ
 
 QUESTION_START = re.compile(r"^\s*(Q\.?\s*\d+\s*[.)]?|\d{1,2}\s*[.)]?)(?=\s|$)", re.I)
 # Part labels: "a)", "(a)", "a.", "A", and bare "a" when a capitalised word follows ("a Describe ...").
-PART_START = re.compile(r"^\s*(\(?[a-hA-H][.)]|\(?[a-h]\)|[A-H](?=\s)|[a-h](?=\s+[A-Z“\"(]))\s+")
+# OCR sometimes drops the space after a punctuated label ("(b)What are ..."), so a capital letter
+# may follow it directly; "e.g. ..." at a line start stays text because a lowercase letter follows.
+PART_START = re.compile(r"^\s*(\(?[a-hA-H][.)](?=\s|[A-Z“\"(])|[A-H](?=\s)|[a-h](?=\s+[A-Z“\"(]))\s*")
 SUBITEM_START = re.compile(r"^\(?(i{1,3}|iv|v|vi{0,3}|\d{1,2})[.)]\s", re.I)
 
 
 TRAILING_MARKS_TEXT = re.compile(r"[\[(]\d{1,2}[\])]\s*$")
 
 
-def question_start(line: str, next_number: int, started: bool, has_marks: bool, numbered_subitems: int = 0) -> re.Match | None:
+IMPLIED_LABEL = re.compile(r"^()")
+
+
+def question_start(
+    line: str, next_number: int, started: bool, has_marks: bool, numbered_subitems: int = 0, after_instructions: bool = False
+) -> re.Match | None:
     """Matches a question label at the start of a line.
 
     "Q1"-style labels always start a question. A bare number ("1  Attempt any FOUR", "2 a Explain")
@@ -73,6 +80,10 @@ def question_start(line: str, next_number: int, started: bool, has_marks: bool, 
     numbered points ("1. Block size", "2. ...", "3. Role of S-box") is a point, not a question."""
     match = QUESTION_START.match(line)
     if not match:
+        # OCR can miss a lone "1" in the margin. Instructions never carry marks, so the first marked
+        # line after them ("Attempt any FOUR [20]") starts question 1; its label is implied ("").
+        if after_instructions and not started and next_number == 1 and has_marks and not INSTRUCTIONS_START.match(line):
+            return IMPLIED_LABEL.match(line)
         return None
     if line.lstrip().upper().startswith("Q"):
         return match
@@ -202,10 +213,12 @@ def printed_labels(layout: str) -> tuple[list[str], list[str]]:
     """Question and part labels exactly as they appear at line starts on the paper; the model
     sometimes drops their punctuation ("a." -> "a")."""
     questions, parts = [], []
-    in_questions, points = False, 0
+    in_questions, points, seen_instructions = False, 0, False
     for raw_line in layout.splitlines():
         line = MARKS_TAG_ANYWHERE.sub("", raw_line).strip()
-        question = question_start(line, len(questions) + 1, in_questions, bool(MARKS_TAG_ANYWHERE.search(raw_line)), points)
+        has_marks = bool(MARKS_TAG_ANYWHERE.search(raw_line))
+        question = question_start(line, len(questions) + 1, in_questions, has_marks, points, seen_instructions)
+        seen_instructions = seen_instructions or bool(INSTRUCTIONS_START.match(line))
         if question:
             in_questions, points = True, 0
             questions.append(question.group(1).strip())
@@ -330,7 +343,7 @@ def _structure_with_rules(extracted: dict) -> dict:
             continue
 
         points = sum(1 for item in current_part["subitems"] if _numbered_point(item)) if current_part else 0
-        question_match = question_start(line, len(questions) + 1, bool(questions), bool(marks), points)
+        question_match = question_start(line, len(questions) + 1, bool(questions), bool(marks), points, in_instructions)
         if question_match:
             rest = line[question_match.end():].strip()
             current_question = {"label": question_match.group(1).strip(), "heading": "", "marks": "", "attempt": None, "parts": []}
