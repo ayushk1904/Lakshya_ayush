@@ -185,6 +185,24 @@ def _native_items(page: pymupdf.Page) -> list[Item]:
 _ocr_engine = None
 
 
+def _cpu_threads() -> int:
+    """Threads the container's CPU quota really allows. A free Render instance gets 0.1 CPU but
+    sees every core of the host; ONNX Runtime's default of one thread per core then makes them
+    queue for the quota and OCR crawls. -1 (one per core) when there is no quota."""
+    for path, parse in (
+        ("/sys/fs/cgroup/cpu.max", lambda text: text.split()),
+        ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", lambda text: [text.strip(), open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read()]),
+    ):
+        try:
+            with open(path) as handle:
+                quota, period = parse(handle.read())
+            if quota not in ("max", "-1"):
+                return max(1, int(float(quota) / float(period)))
+        except (OSError, ValueError):
+            continue
+    return -1
+
+
 def _ocr():
     """RapidOCR is loaded on first use; papers with a clean text layer never pay for it."""
     global _ocr_engine
@@ -192,17 +210,20 @@ def _ocr():
         from rapidocr import RapidOCR
 
         logging.getLogger("RapidOCR").setLevel(logging.WARNING)
+        threads = _cpu_threads()
         # The text-direction classifier sometimes flips a normal line and reads it as gibberish;
         # exam pages are never upside down, so it is turned off.
         # Memory, for a 512 MB server: text is *found* on a copy of each band capped at 960 px
-        # (detection dominates memory) and *read* from the full-resolution band, one line at a time.
-        # Measured on scanned papers: peak ~255 MB instead of ~700 MB, word recall 98.6% vs 99.1%.
+        # (detection dominates memory) and *read* from the full-resolution band.
         # ("max" also stops the default "min" rule from upscaling short bands.)
         _ocr_engine = RapidOCR(params={
             "Global.use_cls": False,
+            "Global.log_level": "warning",
             "Det.limit_type": "max",
             "Det.limit_side_len": 960,
-            "Rec.rec_batch_num": 1,
+            "Rec.rec_batch_num": 1,  # batching is slower on one core and raises peak memory
+            "EngineConfig.onnxruntime.intra_op_num_threads": threads,
+            "EngineConfig.onnxruntime.inter_op_num_threads": 1 if threads > 0 else -1,
         })
     return _ocr_engine
 
@@ -214,27 +235,41 @@ OCR_OVERLAP = 120  # taller than any text line, so every line lies wholly inside
 def _ocr_items(page: pymupdf.Page) -> list[Item]:
     """OCR in overlapping horizontal bands. Text detection on a whole 200-dpi page briefly needs
     ~700 MB, more than a 512 MB server has; a band needs a fraction of that with the same accuracy.
-    Each line is kept from the band whose middle (non-overlapping) zone holds its centre."""
+    Each line is kept from the band whose middle (non-overlapping) zone holds its centre, and only
+    then read, so lines in the overlaps are not recognised twice."""
+    from rapidocr.utils.process_img import get_rotate_crop_image
+
     pixmap = page.get_pixmap(dpi=OCR_DPI, colorspace=pymupdf.csRGB)
     image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.h, pixmap.w, 3)
     scale = 72 / OCR_DPI
-    items = []
+    engine = _ocr()
+    boxes, crops = [], []
 
     step = OCR_BAND - OCR_OVERLAP
     for top in range(0, max(1, pixmap.h - OCR_OVERLAP), step):
         bottom = min(pixmap.h, top + OCR_BAND)
-        result = _ocr()(np.ascontiguousarray(image[top:bottom]))
-        if result.boxes is None:
+        band = np.ascontiguousarray(image[top:bottom])
+        found = engine(band, use_det=True, use_cls=False, use_rec=False)
+        if getattr(found, "boxes", None) is None:
             continue
         keep_from = top + (OCR_OVERLAP / 2 if top else 0)
         keep_to = bottom - OCR_OVERLAP / 2 if bottom < pixmap.h else bottom
-        for box, text, score in zip(result.boxes, result.txts, result.scores):
-            if score < 0.5 or not text.strip():
-                continue
-            xs, ys = [point[0] for point in box], [point[1] + top for point in box]
-            if not keep_from <= (min(ys) + max(ys)) / 2 < keep_to:
+        for box in found.boxes:
+            box = np.asarray(box, dtype=np.float32)
+            if not keep_from <= top + (box[:, 1].min() + box[:, 1].max()) / 2 < keep_to:
                 continue  # this line belongs to the neighbouring band
-            items.append(Item(min(xs) * scale, min(ys) * scale, max(xs) * scale, max(ys) * scale, text.strip()))
+            crops.append(get_rotate_crop_image(band, box.copy()))
+            boxes.append(box + (0, top))
+
+    if not crops:
+        return []
+    read = engine.recognize_txt(crops)
+    items = []
+    for box, text, score in zip(boxes, read.txts, read.scores):
+        if score < 0.5 or not text.strip():
+            continue
+        items.append(Item(box[:, 0].min() * scale, box[:, 1].min() * scale, box[:, 0].max() * scale,
+                          box[:, 1].max() * scale, text.strip()))
     return items
 
 

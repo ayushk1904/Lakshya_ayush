@@ -108,6 +108,18 @@ async function ingestPaper(buffer, fileName) {
   return data;
 }
 
+// A free Render instance sleeps after 15 idle minutes and takes about a minute to wake. Pinging
+// it when the Practice Tests page opens means it is usually awake by the time a paper is chosen.
+let lastWarmUp = 0;
+
+function warmPlanner() {
+  if (Date.now() - lastWarmUp < 5 * 60 * 1000) {
+    return;
+  }
+  lastWarmUp = Date.now();
+  fetch(`${PLANNER_AI_URL}/health`, { signal: AbortSignal.timeout(120 * 1000) }).catch(() => {});
+}
+
 // Structured papers -> a new practice test in the same format (RAG over the selected papers).
 async function generatePracticeTest(payload) {
   const response = await plannerFetch("/papers/generate", payload, 4 * 60 * 1000);
@@ -124,5 +136,6 @@ module.exports = {
   buildPlan,
   generatePracticeTest,
   ingestPaper,
-  ingestSyllabus
+  ingestSyllabus,
+  warmPlanner
 };

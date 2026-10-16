@@ -1,5 +1,5 @@
 import { Clock3, FileText, Send, Sparkles, Trash2, Upload, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { chatApi, examApi, trackStudyEvent } from "../api/client";
 
 function toLocalDateTimeInput(date = new Date()) {
@@ -37,6 +37,14 @@ function plural(count, word) {
 
 // "Analysis of Algorithm · 17 questions · 2 diagrams · read with OCR"
 function describePaper(paper) {
+  if (paper.status === "analysing") {
+    return "Reading the paper... Scanned pages take about a minute each.";
+  }
+
+  if (paper.status === "failed") {
+    return paper.statusMessage || "Could not read this paper. Remove it and upload it again.";
+  }
+
   if (paper.analysed) {
     return [
       paper.subject,
@@ -103,6 +111,45 @@ function PracticeTestsPage() {
     );
   }, []);
 
+  // Uploaded PDFs are read in the background; check on them until none is left "analysing".
+  const readingCount = papers.filter((paper) => paper.status === "analysing").length;
+  const papersRef = useRef(papers);
+  papersRef.current = papers;
+
+  useEffect(() => {
+    if (!readingCount) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      examApi
+        .listPapers()
+        .then((data) => {
+          const latest = data.papers || [];
+          const wasReading = new Set(papersRef.current.filter((paper) => paper.status === "analysing").map((paper) => paper._id));
+          const finished = latest.filter((paper) => wasReading.has(paper._id) && paper.status !== "analysing");
+
+          setPapers(latest);
+          if (finished.length) {
+            const ready = finished.filter((paper) => paper.status === "ready");
+            const failed = finished.filter((paper) => paper.status === "failed");
+            setStatus(
+              [
+                ready.length === 1 ? `${ready[0].fileName} is ready for test generation.` : "",
+                ready.length > 1 ? `${ready.length} papers are ready for test generation.` : "",
+                failed.map((paper) => `"${paper.fileName}": ${paper.statusMessage}`).join(" ")
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [readingCount]);
+
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       Promise.allSettled([examApi.upcoming()]).then(([upcomingResult]) => {
@@ -124,7 +171,7 @@ function PracticeTestsPage() {
     }
 
     setUploading(true);
-    setStatus("Reading your papers: questions, diagrams and tables. Scanned or protected PDFs are read with OCR, which takes about 10 seconds per page.");
+    setStatus("Uploading...");
 
     try {
       const formData = new FormData();
@@ -136,10 +183,16 @@ function PracticeTestsPage() {
 
       setPapers((current) => [...uploadedPapers, ...current]);
       setSelectedPaperIds((current) => [...uploadedPapers.map((paper) => paper._id), ...current]);
-      const summary =
-        uploadedPapers.length === 1
-          ? `${uploadedPapers[0].fileName} is ready for test generation.`
-          : `${uploadedPapers.length} papers are ready for test generation.`;
+      const reading = uploadedPapers.filter((paper) => paper.status === "analysing").length;
+      const ready = uploadedPapers.length - reading;
+      let summary = `${ready} papers are ready for test generation.`;
+      if (reading) {
+        summary =
+          `Uploaded. Lakshya is reading ${reading === 1 ? "the paper" : `${reading} papers`} in the background ` +
+          `(questions, diagrams and tables); you can keep using the app.${ready ? ` ${ready} more ${ready === 1 ? "is" : "are"} ready already.` : ""}`;
+      } else if (ready === 1) {
+        summary = `${uploadedPapers[0].fileName} is ready for test generation.`;
+      }
       setStatus(data.warning ? `${summary} ${data.warning}` : summary);
     } catch (error) {
       setStatus(error.message);
@@ -268,7 +321,7 @@ function PracticeTestsPage() {
                   <article className={`practice-paper-card ${selectedPaperIds.includes(paper._id) ? "active" : ""}`} key={paper._id}>
                     <button className="practice-paper-main" type="button" onClick={() => togglePaper(paper._id)}>
                       <strong>{paper.fileName}</strong>
-                      <span>
+                      <span className={paper.status === "analysing" ? "is-reading" : paper.status === "failed" ? "is-failed" : ""}>
                         {describePaper(paper)}
                       </span>
                     </button>

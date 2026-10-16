@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
 const multer = require("multer");
@@ -8,7 +9,7 @@ const PreviousPaper = require("../models/PreviousPaper");
 const ChatRoom = require("../models/ChatRoom");
 const ChatMessage = require("../models/ChatMessage");
 const { analyzeFrame } = require("../services/proctorAiClient");
-const { generatePracticeTest, ingestPaper } = require("../services/plannerAiClient");
+const { generatePracticeTest, ingestPaper, warmPlanner } = require("../services/plannerAiClient");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -374,6 +375,8 @@ function serializePaper(document) {
     diagramCount: document.extractedImages?.length || 0,
     subject: document.subject || "",
     analysed: Boolean(document.structure?.questions?.length),
+    status: document.status || "ready",
+    statusMessage: document.statusMessage || "",
     questionCount: (document.structure?.questions || []).reduce((sum, question) => sum + (question.parts?.length || 0), 0),
     tableCount: document.tables?.length || 0,
     ocrPages: document.ocrPages || 0
@@ -616,16 +619,110 @@ async function analysePaperPdf(file) {
   }
 }
 
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function analysedPaperFields(analysed) {
+  return {
+    extractedText: analysed.layout_text?.trim() || "",
+    extractedImages: (analysed.figures || []).map((figure) => ({
+      diagramId: figure.id,
+      pageNumber: figure.page,
+      width: figure.width,
+      height: figure.height,
+      dataUrl: figure.dataUrl
+    })),
+    subject: analysed.structure?.subject || analysed.meta?.subject || "",
+    structure: analysed.structure || null,
+    structureMethod: analysed.structure_method || "",
+    tables: analysed.tables || [],
+    ocrPages: analysed.ocr_pages || 0,
+    pageCount: analysed.page_count || 0
+  };
+}
+
+// PDFs are read one at a time in the background, so an upload returns at once. On a free Render
+// instance a scanned page takes about a minute to OCR; the page polls GET /papers meanwhile.
+const analysisQueue = [];
+const pendingPaperIds = new Set();
+let analysisRunning = false;
+
+function queuePaperAnalysis(paperId, file) {
+  pendingPaperIds.add(String(paperId));
+  analysisQueue.push({ paperId, file });
+  runAnalysisQueue();
+}
+
+async function readQueuedPaper(file) {
+  // A planner that was asleep or restarting answers 502/503; one retry covers it.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return { ...analysedPaperFields(await analysePaperPdf(file)), status: "ready", statusMessage: "" };
+    } catch (error) {
+      if (error.status !== 400 && attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 10 * 1000));
+        continue;
+      }
+      console.error("practice-paper analysis error:", error.message);
+      return { status: "failed", statusMessage: error.message || "Could not read this paper." };
+    }
+  }
+}
+
+async function runAnalysisQueue() {
+  if (analysisRunning) {
+    return;
+  }
+  analysisRunning = true;
+
+  while (analysisQueue.length) {
+    const { paperId, file } = analysisQueue.shift();
+    const update = await readQueuedPaper(file);
+
+    try {
+      await PreviousPaper.updateOne({ _id: paperId, status: "analysing" }, { $set: update });
+    } catch (error) {
+      console.error("practice-paper save error:", error.message);
+    }
+    pendingPaperIds.delete(String(paperId));
+  }
+
+  analysisRunning = false;
+}
+
+// The same PDF read before (by anyone) is copied instead of being read again.
+function findAnalysedCopy(contentHash) {
+  return PreviousPaper.findOne({ contentHash, status: "ready", "structure.questions.0": { $exists: true } })
+    .sort({ createdAt: -1 })
+    .lean();
+}
+
 function getUploadedFiles(req) {
   return [...(req.files?.files || []), ...(req.files?.file || []), ...(req.file ? [req.file] : [])];
 }
 
 router.get("/papers", async (req, res) => {
+  warmPlanner();
+
   if (mongoose.connection.readyState !== 1) {
     return res.json({ papers: [] });
   }
 
   const papers = await PreviousPaper.find({ userId: req.user._id }).sort({ createdAt: -1 });
+
+  // Jobs live in memory, so a server restart loses the ones that had not finished.
+  for (const paper of papers) {
+    if (paper.status === "analysing" && !pendingPaperIds.has(String(paper._id))) {
+      paper.status = "failed";
+      paper.statusMessage = "Reading was interrupted. Remove it and upload it again.";
+      await PreviousPaper.updateOne(
+        { _id: paper._id, status: "analysing" },
+        { $set: { status: paper.status, statusMessage: paper.statusMessage } }
+      );
+    }
+  }
+
   return res.json({ papers: papers.map(serializePaper) });
 });
 
@@ -643,39 +740,34 @@ router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "
   const createdPapers = [];
   const warnings = [];
 
-  // One at a time: the analyser OCRs scanned pages and calls the model per paper.
   for (const file of files) {
     try {
-      const analysed = file.mimetype === "application/pdf" ? await analysePaperPdf(file) : null;
-      const extractedText = analysed?.layout_text?.trim() || (await extractDocumentText(file)).trim();
+      const owner = { userId: req.user._id, fileName: file.originalname, mimeType: file.mimetype };
+
+      if (file.mimetype === "application/pdf") {
+        const contentHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
+        const copy = await findAnalysedCopy(contentHash);
+
+        if (copy) {
+          const { _id, userId, fileName, createdAt, updatedAt, __v, ...analysed } = copy;
+          createdPapers.push(serializePaper(await PreviousPaper.create({ ...analysed, ...owner, contentHash })));
+          continue;
+        }
+
+        const paper = await PreviousPaper.create({ ...owner, contentHash, status: "analysing" });
+        queuePaperAnalysis(paper._id, file);
+        createdPapers.push(serializePaper(paper));
+        continue;
+      }
+
+      const extractedText = (await extractDocumentText(file)).trim();
 
       if (!extractedText) {
         warnings.push(`"${file.originalname}" did not contain readable text.`);
         continue;
       }
 
-      const paper = await PreviousPaper.create({
-        userId: req.user._id,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-        extractedText,
-        extractedImages: (analysed?.figures || []).map((figure) => ({
-          diagramId: figure.id,
-          pageNumber: figure.page,
-          width: figure.width,
-          height: figure.height,
-          dataUrl: figure.dataUrl
-        })),
-        pageTexts: [],
-        subject: analysed?.structure?.subject || analysed?.meta?.subject || "",
-        structure: analysed?.structure || null,
-        structureMethod: analysed?.structure_method || "",
-        tables: analysed?.tables || [],
-        ocrPages: analysed?.ocr_pages || 0,
-        pageCount: analysed?.page_count || 0
-      });
-
-      createdPapers.push(serializePaper(paper));
+      createdPapers.push(serializePaper(await PreviousPaper.create({ ...owner, extractedText, pageTexts: [] })));
     } catch (error) {
       console.error("practice-paper upload error:", error);
       warnings.push(`"${file.originalname}": ${error.message || "could not be processed"}`);
@@ -790,11 +882,33 @@ router.post("/generate-test", async (req, res) => {
   // is often scrambled (protected fonts), so they are left out instead of producing a broken test.
   // Only plain-text uploads still use the original single-prompt generator below.
   const structuredPapers = papers.filter((paper) => paper.structure?.questions?.length);
-  const legacyPdfs = papers.filter((paper) => !paper.structure?.questions?.length && paper.mimeType === "application/pdf");
+  const readingPapers = papers.filter((paper) => paper.status === "analysing");
+  const failedPapers = papers.filter((paper) => paper.status === "failed");
+  const legacyPdfs = papers.filter(
+    (paper) => !paper.structure?.questions?.length && paper.mimeType === "application/pdf" && (paper.status || "ready") === "ready"
+  );
   const textPapers = papers.filter((paper) => !paper.structure?.questions?.length && paper.mimeType !== "application/pdf");
-  const legacyWarning = legacyPdfs.length
-    ? `${legacyPdfs.length} older PDF${legacyPdfs.length === 1 ? " was" : "s were"} skipped; remove and upload ${legacyPdfs.length === 1 ? "it" : "them"} again to include ${legacyPdfs.length === 1 ? "it" : "them"}. `
-    : "";
+  const legacyWarning = [
+    readingPapers.length
+      ? `${plural(readingPapers.length, "paper")} still being read ${readingPapers.length === 1 ? "was" : "were"} left out. `
+      : "",
+    failedPapers.length
+      ? `${plural(failedPapers.length, "paper")} that could not be read ${failedPapers.length === 1 ? "was" : "were"} left out. `
+      : "",
+    legacyPdfs.length
+      ? `${legacyPdfs.length} older PDF${legacyPdfs.length === 1 ? " was" : "s were"} skipped; remove and upload ${legacyPdfs.length === 1 ? "it" : "them"} again to include ${legacyPdfs.length === 1 ? "it" : "them"}. `
+      : ""
+  ].join("");
+
+  if (!structuredPapers.length && !textPapers.length && readingPapers.length) {
+    return res.status(409).json({
+      message: "Lakshya is still reading the selected papers. Generate the test once they show as ready."
+    });
+  }
+
+  if (!structuredPapers.length && !textPapers.length && !legacyPdfs.length) {
+    return res.status(400).json({ message: "The selected papers could not be read. Remove them and upload them again." });
+  }
 
   if (!structuredPapers.length && !textPapers.length) {
     return res.status(400).json({
