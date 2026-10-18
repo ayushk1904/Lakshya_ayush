@@ -1,0 +1,51 @@
+# Deploys the two Python AI services to Hugging Face Spaces (free: 2 vCPU, 16 GB RAM) whenever
+# their code changes on main. Needs the repository secret HF_TOKEN (write access) plus the
+# service secrets listed below, all set under GitHub > Settings > Secrets and variables > Actions.
+name: Deploy AI services to Hugging Face
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "planner-ai/**"
+      - "proctor-ai/**"
+      - ".github/workflows/deploy-hf-spaces.yml"
+      - ".github/scripts/deploy_space.py"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - folder: planner-ai
+            space: lakshya-planner
+            title: Lakshya Planner AI
+            secrets: GROQ_API_KEY,PLANNER_AI_TOKEN
+            variables: GROQ_MODEL
+          - folder: proctor-ai
+            space: lakshya-proctor
+            title: Lakshya Proctor AI
+            secrets: PROCTOR_AI_TOKEN
+            variables: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "huggingface_hub>=0.25"
+      - name: Deploy ${{ matrix.folder }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          PLANNER_AI_TOKEN: ${{ secrets.PLANNER_AI_TOKEN }}
+          PROCTOR_AI_TOKEN: ${{ secrets.PROCTOR_AI_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::Add the HF_TOKEN repository secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          python .github/scripts/deploy_space.py "${{ matrix.folder }}" "${{ matrix.space }}" "${{ matrix.title }}" "${{ matrix.secrets }}" "${{ matrix.variables }}"
