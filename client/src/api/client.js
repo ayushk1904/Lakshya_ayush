@@ -451,7 +451,9 @@ function normalizePaperRecord(paper = {}, index = 0) {
     analysed: Boolean(paper.analysed),
     questionCount: paper.questionCount || 0,
     tableCount: paper.tableCount || 0,
-    ocrPages: paper.ocrPages || 0
+    ocrPages: paper.ocrPages || 0,
+    status: paper.status || "ready",
+    statusMessage: paper.statusMessage || ""
   };
 }
 
@@ -571,6 +573,11 @@ export const examApi = {
         warning: data.warning || ""
       };
     }
+  },
+
+  retryPaper: async (paperId) => {
+    const data = await apiRequest(`/exam-sessions/papers/${encodeURIComponent(paperId)}/retry`, { method: "POST" });
+    return { paper: normalizePaperRecord(data.paper) };
   },
 
   deletePaper: async (paper) => {

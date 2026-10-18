@@ -8,22 +8,76 @@ function serviceError(message, status = 502) {
   return error;
 }
 
-async function plannerFetch(path, body, timeoutMs) {
-  try {
-    return await fetch(`${PLANNER_AI_URL}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(process.env.PLANNER_AI_TOKEN ? { "X-Planner-Token": process.env.PLANNER_AI_TOKEN } : {})
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs)
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+let lastAwakeAt = 0;
+let wakeUp = null;
+
+// A free Render instance sleeps after 15 idle minutes. While it wakes (about a minute) Render
+// answers requests with an instant 502, so calls first wait for /health to answer.
+function waitForPlanner(maxMs = 3 * 60 * 1000) {
+  if (Date.now() - lastAwakeAt < 60 * 1000) {
+    return Promise.resolve();
+  }
+  if (!wakeUp) {
+    wakeUp = (async () => {
+      const deadline = Date.now() + maxMs;
+      while (Date.now() < deadline) {
+        try {
+          const response = await fetch(`${PLANNER_AI_URL}/health`, { signal: AbortSignal.timeout(60 * 1000) });
+          if (response.ok) {
+            lastAwakeAt = Date.now();
+            return;
+          }
+        } catch (_error) {
+          // not up yet
+        }
+        await sleep(4000);
+      }
+    })().finally(() => {
+      wakeUp = null;
     });
-  } catch (error) {
-    if (error.name === "TimeoutError") {
-      throw serviceError("The planner AI service took too long to respond. Please try again.", 504);
+  }
+  return wakeUp;
+}
+
+async function plannerFetch(path, body, timeoutMs, attempts = 4) {
+  for (let attempt = 1; ; attempt += 1) {
+    await waitForPlanner();
+    let response;
+
+    try {
+      response = await fetch(`${PLANNER_AI_URL}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(process.env.PLANNER_AI_TOKEN ? { "X-Planner-Token": process.env.PLANNER_AI_TOKEN } : {})
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (error) {
+      if (error.name === "TimeoutError") {
+        throw serviceError("The planner AI service took too long to respond. Please try again.", 504);
+      }
+      if (attempt >= attempts) {
+        throw serviceError("The planner AI service is not running. Start it with: npm run planner", 503);
+      }
+      lastAwakeAt = 0;
+      await sleep(3000 * attempt);
+      continue;
     }
-    throw serviceError("The planner AI service is not running. Start it with: npm run planner", 503);
+
+    // Render's gateway errors (instance waking, restarting or briefly overloaded) are worth a retry.
+    if (GATEWAY_STATUSES.has(response.status) && attempt < attempts) {
+      lastAwakeAt = 0;
+      await sleep(3000 * attempt);
+      continue;
+    }
+    if (response.ok) {
+      lastAwakeAt = Date.now();
+    }
+    return response;
   }
 }
 
@@ -110,14 +164,8 @@ async function ingestPaper(buffer, fileName) {
 
 // A free Render instance sleeps after 15 idle minutes and takes about a minute to wake. Pinging
 // it when the Practice Tests page opens means it is usually awake by the time a paper is chosen.
-let lastWarmUp = 0;
-
 function warmPlanner() {
-  if (Date.now() - lastWarmUp < 5 * 60 * 1000) {
-    return;
-  }
-  lastWarmUp = Date.now();
-  fetch(`${PLANNER_AI_URL}/health`, { signal: AbortSignal.timeout(120 * 1000) }).catch(() => {});
+  waitForPlanner().catch(() => {});
 }
 
 // Structured papers -> a new practice test in the same format (RAG over the selected papers).

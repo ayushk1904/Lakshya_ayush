@@ -9,7 +9,8 @@ const authMiddleware = require("../middleware/authMiddleware");
 const PreviousPaper = require("../models/PreviousPaper");
 const StudyPlan = require("../models/StudyPlan");
 const SyllabusDocument = require("../models/SyllabusDocument");
-const { buildPlan, ingestSyllabus } = require("../services/plannerAiClient");
+const { addPaperPdf, fixFileName, isPdf } = require("../services/paperAnalysis");
+const { buildPlan, ingestSyllabus, warmPlanner } = require("../services/plannerAiClient");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -54,7 +55,7 @@ function serializeSyllabus(doc) {
 }
 
 function serializePaper(paper) {
-  return { _id: paper._id, fileName: paper.fileName, createdAt: paper.createdAt };
+  return { _id: paper._id, fileName: fixFileName(paper.fileName), createdAt: paper.createdAt };
 }
 
 function todayInAppZone() {
@@ -98,6 +99,7 @@ async function resumeInterruptedIndexing() {
 }
 
 router.get("/library", async (req, res) => {
+  warmPlanner();
   const [syllabi, papers] = await Promise.all([
     SyllabusDocument.find({ userId: req.user._id }).select("-rawText -chunks").sort({ createdAt: -1 }),
     PreviousPaper.find({ userId: req.user._id }).select("fileName createdAt").sort({ createdAt: -1 })
@@ -182,15 +184,21 @@ router.post("/papers", upload.array("files", 20), async (req, res) => {
     const created = [];
     const rejected = [];
     for (const file of files) {
-      const extractedText = (await extractText(file)).trim();
+      const extractedText = (await extractText(file).catch(() => "")).trim();
+      // PDFs are also read properly in the background (OCR included), which makes them usable for
+      // Practice Tests too; the quick text-layer read serves the planner until then.
+      if (isPdf(file)) {
+        created.push(await addPaperPdf({ userId: req.user._id, file, extractedText }));
+        continue;
+      }
       if (extractedText.replace(/\s+/g, "").length < 100) {
-        rejected.push(file.originalname);
+        rejected.push(fixFileName(file.originalname));
         continue;
       }
       created.push(
         await PreviousPaper.create({
           userId: req.user._id,
-          fileName: file.originalname,
+          fileName: fixFileName(file.originalname),
           mimeType: file.mimetype,
           extractedText,
           extractedImages: [],

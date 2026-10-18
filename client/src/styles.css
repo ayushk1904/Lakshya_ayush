@@ -1792,6 +1792,22 @@ button {
   color: var(--danger, #ca4d4d);
 }
 
+.practice-paper-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-paper-retry {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: color-mix(in srgb, var(--primary) 8%, var(--panel));
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+}
+
 .practice-paper-remove {
   width: 38px;
   height: 38px;

@@ -10,10 +10,12 @@ const host = process.env.HOST || "0.0.0.0";
 const port = process.env.PORT || 5000;
 
 const { resumeInterruptedIndexing } = require("./src/routes/studyPlannerRoutes");
+const { resumeInterruptedPaperReading } = require("./src/services/paperAnalysis");
 
 connectDB().then((connected) => {
   if (connected) {
     resumeInterruptedIndexing().catch((error) => console.error("resume indexing error:", error));
+    resumeInterruptedPaperReading().catch((error) => console.error("resume paper reading error:", error));
   }
 }).finally(() => {
   app.listen(port, host, () => {

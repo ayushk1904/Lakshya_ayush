@@ -70,7 +70,8 @@ def _tokens(text: str) -> list[str]:
 
 
 def _subject_key(subject: str) -> str:
-    return re.sub(r"[^a-z]", "", (subject or "").lower())
+    """"Digital Logic & Computer Architecture" and "Digital Logic and Computer Architecture" match."""
+    return re.sub(r"[^a-z]", "", (subject or "").lower().replace("&", "and"))
 
 
 class QuestionBank:

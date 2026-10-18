@@ -1,4 +1,4 @@
-import { Clock3, FileText, Send, Sparkles, Trash2, Upload, Users } from "lucide-react";
+import { Clock3, FileText, RotateCw, Send, Sparkles, Trash2, Upload, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { chatApi, examApi, trackStudyEvent } from "../api/client";
 
@@ -60,6 +60,15 @@ function describePaper(paper) {
   return paper.mimeType === "application/pdf" ? "Older upload, not used for tests. Remove it and upload again." : "Text file uploaded";
 }
 
+// Papers a test can be built from (or soon can, once read). Raw-text PDFs from before papers were
+// read properly, and papers that failed, are listed but not selected by default.
+function isUsablePaper(paper) {
+  if (paper.status === "failed") {
+    return false;
+  }
+  return paper.analysed || paper.status === "analysing" || paper.mimeType !== "application/pdf";
+}
+
 function isSampleScheduledTest(session) {
   const title = String(session?.title || "").trim().toLowerCase();
   const date = String(session?.date || "").trim().toLowerCase();
@@ -94,7 +103,7 @@ function PracticeTestsPage() {
       if (papersResult.status === "fulfilled") {
         const nextPapers = papersResult.value.papers || [];
         setPapers(nextPapers);
-        setSelectedPaperIds(nextPapers.map((paper) => paper._id));
+        setSelectedPaperIds(nextPapers.filter(isUsablePaper).map((paper) => paper._id));
       }
 
       if (upcomingResult.status === "fulfilled") {
@@ -113,6 +122,7 @@ function PracticeTestsPage() {
 
   // Uploaded PDFs are read in the background; check on them until none is left "analysing".
   const readingCount = papers.filter((paper) => paper.status === "analysing").length;
+  const selectedStillReading = papers.some((paper) => paper.status === "analysing" && selectedPaperIds.includes(paper._id));
   const papersRef = useRef(papers);
   papersRef.current = papers;
 
@@ -204,6 +214,17 @@ function PracticeTestsPage() {
 
   function togglePaper(paperId) {
     setSelectedPaperIds((current) => (current.includes(paperId) ? current.filter((id) => id !== paperId) : [...current, paperId]));
+  }
+
+  async function retryPaper(paper) {
+    try {
+      const data = await examApi.retryPaper(paper._id);
+      setPapers((current) => current.map((item) => (item._id === paper._id ? { ...item, ...data.paper } : item)));
+      setSelectedPaperIds((current) => (current.includes(paper._id) ? current : [paper._id, ...current]));
+      setStatus(`Reading ${paper.fileName} again...`);
+    } catch (error) {
+      setStatus(error.message);
+    }
   }
 
   async function removePaper(paper) {
@@ -325,9 +346,16 @@ function PracticeTestsPage() {
                         {describePaper(paper)}
                       </span>
                     </button>
-                    <button className="practice-paper-remove" type="button" aria-label={`Remove ${paper.fileName}`} onClick={() => removePaper(paper)}>
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="practice-paper-actions">
+                      {paper.status === "failed" ? (
+                        <button className="practice-paper-retry" type="button" aria-label={`Read ${paper.fileName} again`} title="Try reading again" onClick={() => retryPaper(paper)}>
+                          <RotateCw size={16} />
+                        </button>
+                      ) : null}
+                      <button className="practice-paper-remove" type="button" aria-label={`Remove ${paper.fileName}`} onClick={() => removePaper(paper)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -392,8 +420,8 @@ function PracticeTestsPage() {
             </div>
 
             <div className="button-row">
-              <button className="primary-button" type="button" onClick={generateTest} disabled={generating}>
-                {generating ? "Generating..." : "Generate Test"}
+              <button className="primary-button" type="button" onClick={generateTest} disabled={generating || selectedStillReading}>
+                {generating ? "Generating..." : selectedStillReading ? "Reading papers..." : "Generate Test"}
               </button>
               <span className="subtle">
                 {studyRooms.length

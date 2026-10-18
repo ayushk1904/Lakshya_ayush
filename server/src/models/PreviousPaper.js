@@ -33,7 +33,8 @@ const previousPaperSchema = new mongoose.Schema(
     // contentHash lets a PDF that was already read (by anyone) be reused instantly.
     status: { type: String, enum: ["ready", "analysing", "failed"], default: "ready" },
     statusMessage: { type: String, default: "" },
-    contentHash: { type: String, default: "", index: true }
+    contentHash: { type: String, default: "", index: true },
+    pendingPdf: { type: Buffer, default: null, select: false }
   },
   { timestamps: true }
 );

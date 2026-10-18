@@ -1,4 +1,3 @@
-const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
 const multer = require("multer");
@@ -9,7 +8,8 @@ const PreviousPaper = require("../models/PreviousPaper");
 const ChatRoom = require("../models/ChatRoom");
 const ChatMessage = require("../models/ChatMessage");
 const { analyzeFrame } = require("../services/proctorAiClient");
-const { generatePracticeTest, ingestPaper, warmPlanner } = require("../services/plannerAiClient");
+const { addPaperPdf, fixFileName, isPdf, retryPaper, settleUnfinished } = require("../services/paperAnalysis");
+const { generatePracticeTest, warmPlanner } = require("../services/plannerAiClient");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -369,7 +369,7 @@ function looksLikeBrokenGeneratedTest(markdown) {
 function serializePaper(document) {
   return {
     _id: document._id,
-    fileName: document.fileName,
+    fileName: fixFileName(document.fileName),
     mimeType: document.mimeType,
     uploadedAt: document.createdAt,
     diagramCount: document.extractedImages?.length || 0,
@@ -604,98 +604,8 @@ async function loadSharedParticipants(session) {
   return [...uniqueParticipants.values()];
 }
 
-// Structured analysis from the planner-ai paper RAG. PDFs are only stored once analysed: many
-// question-paper PDFs have scrambled text layers, so a plain-text fallback would store gibberish
-// and later generate a nonsense test.
-async function analysePaperPdf(file) {
-  try {
-    return await ingestPaper(file.buffer, file.originalname);
-  } catch (error) {
-    if (error.status === 400) {
-      throw error;
-    }
-    console.error("paper analysis unavailable:", error.message);
-    throw new Error(`the paper analyser is not available right now (${error.message}). Please try again in a minute.`);
-  }
-}
-
 function plural(count, word) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
-
-function analysedPaperFields(analysed) {
-  return {
-    extractedText: analysed.layout_text?.trim() || "",
-    extractedImages: (analysed.figures || []).map((figure) => ({
-      diagramId: figure.id,
-      pageNumber: figure.page,
-      width: figure.width,
-      height: figure.height,
-      dataUrl: figure.dataUrl
-    })),
-    subject: analysed.structure?.subject || analysed.meta?.subject || "",
-    structure: analysed.structure || null,
-    structureMethod: analysed.structure_method || "",
-    tables: analysed.tables || [],
-    ocrPages: analysed.ocr_pages || 0,
-    pageCount: analysed.page_count || 0
-  };
-}
-
-// PDFs are read one at a time in the background, so an upload returns at once. On a free Render
-// instance a scanned page takes about a minute to OCR; the page polls GET /papers meanwhile.
-const analysisQueue = [];
-const pendingPaperIds = new Set();
-let analysisRunning = false;
-
-function queuePaperAnalysis(paperId, file) {
-  pendingPaperIds.add(String(paperId));
-  analysisQueue.push({ paperId, file });
-  runAnalysisQueue();
-}
-
-async function readQueuedPaper(file) {
-  // A planner that was asleep or restarting answers 502/503; one retry covers it.
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return { ...analysedPaperFields(await analysePaperPdf(file)), status: "ready", statusMessage: "" };
-    } catch (error) {
-      if (error.status !== 400 && attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 10 * 1000));
-        continue;
-      }
-      console.error("practice-paper analysis error:", error.message);
-      return { status: "failed", statusMessage: error.message || "Could not read this paper." };
-    }
-  }
-}
-
-async function runAnalysisQueue() {
-  if (analysisRunning) {
-    return;
-  }
-  analysisRunning = true;
-
-  while (analysisQueue.length) {
-    const { paperId, file } = analysisQueue.shift();
-    const update = await readQueuedPaper(file);
-
-    try {
-      await PreviousPaper.updateOne({ _id: paperId, status: "analysing" }, { $set: update });
-    } catch (error) {
-      console.error("practice-paper save error:", error.message);
-    }
-    pendingPaperIds.delete(String(paperId));
-  }
-
-  analysisRunning = false;
-}
-
-// The same PDF read before (by anyone) is copied instead of being read again.
-function findAnalysedCopy(contentHash) {
-  return PreviousPaper.findOne({ contentHash, status: "ready", "structure.questions.0": { $exists: true } })
-    .sort({ createdAt: -1 })
-    .lean();
 }
 
 function getUploadedFiles(req) {
@@ -710,22 +620,12 @@ router.get("/papers", async (req, res) => {
   }
 
   const papers = await PreviousPaper.find({ userId: req.user._id }).sort({ createdAt: -1 });
-
-  // Jobs live in memory, so a server restart loses the ones that had not finished.
-  for (const paper of papers) {
-    if (paper.status === "analysing" && !pendingPaperIds.has(String(paper._id))) {
-      paper.status = "failed";
-      paper.statusMessage = "Reading was interrupted. Remove it and upload it again.";
-      await PreviousPaper.updateOne(
-        { _id: paper._id, status: "analysing" },
-        { $set: { status: paper.status, statusMessage: paper.statusMessage } }
-      );
-    }
-  }
-
+  await settleUnfinished(papers);
   return res.json({ papers: papers.map(serializePaper) });
 });
 
+// PDFs are read in the background (see services/paperAnalysis), so an upload returns at once and
+// the page polls GET /papers until each paper is "ready" or "failed".
 router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "file", maxCount: 20 }]), async (req, res) => {
   if (mongoose.connection.readyState !== 1) {
     return res.status(503).json({ message: "Database unavailable. Start MongoDB and try again." });
@@ -741,36 +641,27 @@ router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "
   const warnings = [];
 
   for (const file of files) {
+    const fileName = fixFileName(file.originalname);
+
     try {
-      const owner = { userId: req.user._id, fileName: file.originalname, mimeType: file.mimetype };
-
-      if (file.mimetype === "application/pdf") {
-        const contentHash = crypto.createHash("sha256").update(file.buffer).digest("hex");
-        const copy = await findAnalysedCopy(contentHash);
-
-        if (copy) {
-          const { _id, userId, fileName, createdAt, updatedAt, __v, ...analysed } = copy;
-          createdPapers.push(serializePaper(await PreviousPaper.create({ ...analysed, ...owner, contentHash })));
-          continue;
-        }
-
-        const paper = await PreviousPaper.create({ ...owner, contentHash, status: "analysing" });
-        queuePaperAnalysis(paper._id, file);
-        createdPapers.push(serializePaper(paper));
+      if (isPdf(file)) {
+        createdPapers.push(serializePaper(await addPaperPdf({ userId: req.user._id, file })));
         continue;
       }
 
       const extractedText = (await extractDocumentText(file)).trim();
 
       if (!extractedText) {
-        warnings.push(`"${file.originalname}" did not contain readable text.`);
+        warnings.push(`"${fileName}" did not contain readable text.`);
         continue;
       }
 
-      createdPapers.push(serializePaper(await PreviousPaper.create({ ...owner, extractedText, pageTexts: [] })));
+      createdPapers.push(
+        serializePaper(await PreviousPaper.create({ userId: req.user._id, fileName, mimeType: file.mimetype, extractedText, pageTexts: [] }))
+      );
     } catch (error) {
       console.error("practice-paper upload error:", error);
-      warnings.push(`"${file.originalname}": ${error.message || "could not be processed"}`);
+      warnings.push(`"${fileName}": ${error.message || "could not be processed"}`);
     }
   }
 
@@ -783,6 +674,28 @@ router.post("/papers", upload.fields([{ name: "files", maxCount: 20 }, { name: "
     paper: createdPapers[0],
     warning: warnings.join(" ")
   });
+});
+
+router.post("/papers/:paperId/retry", async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.paperId)) {
+    return res.status(404).json({ message: "Paper not found" });
+  }
+
+  const paper = await PreviousPaper.findOne({ _id: req.params.paperId, userId: req.user._id });
+
+  if (!paper) {
+    return res.status(404).json({ message: "Paper not found" });
+  }
+  if (paper.status === "analysing") {
+    return res.json({ paper: serializePaper(paper) });
+  }
+  if (!(await retryPaper(paper))) {
+    return res.status(410).json({ message: "This paper's PDF was not kept. Remove it and upload it again." });
+  }
+
+  paper.status = "analysing";
+  paper.statusMessage = "";
+  return res.json({ paper: serializePaper(paper) });
 });
 
 router.delete("/papers/:paperId", async (req, res) => {
