@@ -9,6 +9,8 @@ const examSessionRoutes = require("./routes/examSessionRoutes");
 const progressRoutes = require("./routes/progressRoutes");
 const studyPlanRoutes = require("./routes/studyPlanRoutes");
 const studyPlannerRoutes = require("./routes/studyPlannerRoutes");
+const { warmPlanner } = require("./services/plannerAiClient");
+const { warmProctor } = require("./services/proctorAiClient");
 
 const app = express();
 const jsonBodyLimit = "8mb";
@@ -24,6 +26,15 @@ app.get("/api/health", (_req, res) => {
     database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     message: "Lakshya backend is ready for MERN feature integration."
   });
+});
+
+// Called once when the website opens. Free Render instances sleep after 15 idle minutes and take
+// about a minute to wake, so the backend (by this request) and both AI services start waking while
+// the visitor is still on the landing or login page.
+app.get("/api/warmup", (_req, res) => {
+  warmPlanner();
+  warmProctor();
+  res.json({ ok: true });
 });
 
 app.use("/api/auth", authRoutes);

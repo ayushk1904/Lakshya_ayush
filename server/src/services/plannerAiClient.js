@@ -41,7 +41,9 @@ function waitForPlanner(maxMs = 3 * 60 * 1000) {
   return wakeUp;
 }
 
-async function plannerFetch(path, body, timeoutMs, attempts = 4) {
+// `body` is sent as JSON, or as-is when it is a Buffer (raw PDF bytes with `extraHeaders`).
+async function plannerFetch(path, body, timeoutMs, attempts = 4, extraHeaders = {}) {
+  const raw = Buffer.isBuffer(body);
   for (let attempt = 1; ; attempt += 1) {
     await waitForPlanner();
     let response;
@@ -50,10 +52,11 @@ async function plannerFetch(path, body, timeoutMs, attempts = 4) {
       response = await fetch(`${PLANNER_AI_URL}${path}`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": raw ? "application/pdf" : "application/json",
+          ...extraHeaders,
           ...(process.env.PLANNER_AI_TOKEN ? { "X-Planner-Token": process.env.PLANNER_AI_TOKEN } : {})
         },
-        body: JSON.stringify(body),
+        body: raw ? body : JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs)
       });
     } catch (error) {
@@ -151,7 +154,13 @@ async function buildPlan(payload) {
 // Previous-year paper PDF -> structured questions, figures and tables (OCR when the PDF's text
 // layer is unreadable, which is common for protected university papers).
 async function ingestPaper(buffer, fileName) {
-  const response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 5 * 60 * 1000);
+  let response = await plannerFetch("/papers/ingest-pdf", Buffer.from(buffer), 10 * 60 * 1000, 4, {
+    "X-File-Name": encodeURIComponent(fileName || "paper.pdf")
+  });
+  if (response.status === 404) {
+    // A planner deployed before /papers/ingest-pdf existed.
+    response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 10 * 60 * 1000);
+  }
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {

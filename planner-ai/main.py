@@ -11,14 +11,20 @@ Run:  uvicorn main:app --port 8001 --reload
 
 import base64
 import binascii
+import ctypes
+import gc
 import json
 import logging
 import os
+import sys
 import threading
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from urllib.parse import unquote
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -34,6 +40,29 @@ from papers.generate import generate_test  # noqa: E402
 from papers.structure import structure_paper  # noqa: E402
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s: %(message)s")
+
+
+def _load_glibc():
+    """glibc's allocator gives every worker thread its own arena and keeps freed memory in them;
+    with FastAPI's thread pool that added ~100 MB on a 512 MB server. Two arenas, and trimming
+    after each paper, keep the planner's memory flat."""
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.mallopt(-8, 2)  # M_ARENA_MAX
+        return libc
+    except (OSError, AttributeError):
+        return None
+
+
+_glibc = _load_glibc()
+
+
+def release_memory() -> None:
+    gc.collect()
+    if _glibc is not None:
+        _glibc.malloc_trim(0)
 log = logging.getLogger("planner-ai")
 
 app = FastAPI(title="Lakshya Planner AI", version="1.0.0")
@@ -117,6 +146,18 @@ def papers_ingest(request: PaperIngestRequest):
         data = base64.b64decode(request.pdf_base64, validate=True)
     except (binascii.Error, ValueError) as error:
         raise HTTPException(status_code=400, detail="The paper is not valid base64") from error
+    return ingest_paper_bytes(data, request.file_name)
+
+
+@app.post("/papers/ingest-pdf", dependencies=[Depends(require_token)])
+async def papers_ingest_pdf(request: Request, x_file_name: str = Header(default="")):
+    """The PDF as the raw request body. Base64 inside JSON held the paper in memory three times over
+    (JSON text, parsed string, decoded bytes): ~100 MB for a large scan on a 512 MB server."""
+    data = await request.body()
+    return await run_in_threadpool(ingest_paper_bytes, data, unquote(x_file_name))
+
+
+def ingest_paper_bytes(data: bytes, file_name: str) -> dict:
     if len(data) > MAX_PAPER_BYTES:
         raise HTTPException(status_code=413, detail="The paper PDF is larger than 25 MB")
     if not data.startswith(b"%PDF"):
@@ -124,7 +165,10 @@ def papers_ingest(request: PaperIngestRequest):
 
     try:
         with paper_extract_lock:
-            extracted = extract_pdf(data)
+            try:
+                extracted = extract_pdf(data)
+            finally:
+                release_memory()
     except ImportError as error:  # OCR/PDF packages missing: a server problem, not a bad PDF
         log.exception("paper extraction dependencies missing")
         raise HTTPException(
@@ -132,7 +176,7 @@ def papers_ingest(request: PaperIngestRequest):
             detail=f"The paper analyser is missing a package ({error.name}). Run: pip install -r planner-ai/requirements.txt",
         ) from error
     except Exception as error:  # corrupt or encrypted PDFs
-        log.exception("paper extraction failed for %s", request.file_name)
+        log.exception("paper extraction failed for %s", file_name)
         raise HTTPException(status_code=400, detail=f"Could not read this PDF: {error}") from error
 
     structure, method = structure_paper(extracted)

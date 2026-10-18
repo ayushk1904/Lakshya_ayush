@@ -313,6 +313,8 @@ async function generateModelJson({ modelConfig, systemPrompt, userPrompt, temper
     },
     body: JSON.stringify({
       model: modelConfig.model,
+      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
+      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
       temperature,
       response_format: { type: "json_object" },
       messages: [

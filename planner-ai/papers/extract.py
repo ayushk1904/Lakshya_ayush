@@ -12,6 +12,7 @@ placeholders where those sit on the page, plus the figures (cropped PNGs) and ta
 
 import base64
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -189,6 +190,10 @@ def _cpu_threads() -> int:
     """Threads the container's CPU quota really allows. A free Render instance gets 0.1 CPU but
     sees every core of the host; ONNX Runtime's default of one thread per core then makes them
     queue for the quota and OCR crawls. -1 (one per core) when there is no quota."""
+    if os.getenv("OCR_THREADS"):
+        return int(os.environ["OCR_THREADS"])
+    if os.getenv("RENDER"):  # Render sets this; its free instances have a fraction of one CPU
+        return 1
     for path, parse in (
         ("/sys/fs/cgroup/cpu.max", lambda text: text.split()),
         ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", lambda text: [text.strip(), open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read()]),
@@ -203,11 +208,31 @@ def _cpu_threads() -> int:
     return -1
 
 
+def _disable_ort_memory_patterns() -> None:
+    """ONNX Runtime caches a memory plan per input shape, and every OCR band and text line has its
+    own shape; on Linux that cache cost ~35 MB of a 512 MB server. RapidOCR builds the session
+    options itself, so they are adjusted where it creates them."""
+    try:
+        from rapidocr.inference_engine.onnxruntime import main as ort_engine
+    except ImportError:
+        return
+    build = ort_engine.OrtInferSession._init_sess_opts
+
+    def without_patterns(cfg):
+        options = build(cfg)
+        options.enable_mem_pattern = False
+        return options
+
+    ort_engine.OrtInferSession._init_sess_opts = staticmethod(without_patterns)
+
+
 def _ocr():
     """RapidOCR is loaded on first use; papers with a clean text layer never pay for it."""
     global _ocr_engine
     if _ocr_engine is None:
         from rapidocr import RapidOCR
+
+        _disable_ort_memory_patterns()
 
         logging.getLogger("RapidOCR").setLevel(logging.WARNING)
         threads = _cpu_threads()
@@ -494,6 +519,9 @@ def extract_pdf(data: bytes) -> dict:
 
         rows.sort(key=lambda row: row.y)
         pages.append(PageResult(number=number, method=method, rows=rows))
+        # MuPDF caches decoded images and fonts with no size limit; on a long-running server that
+        # grew with every paper read until the 512 MB instance was killed (seen live as 502s).
+        pymupdf.TOOLS.store_shrink(100)
 
     document.close()
     return {

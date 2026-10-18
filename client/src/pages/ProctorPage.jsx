@@ -406,12 +406,15 @@ function ProctorPage() {
       try {
         ({ result } = await examApi.proctorFrame(sessionId, { image: canvas.toDataURL("image/jpeg", 0.75), baseline }));
       } catch (error) {
+        // The vision service sleeps when idle on the free server; while it wakes it is "starting",
+        // not offline, and frames are retried sooner.
+        const starting = /starting up/i.test(error.message || "");
         if (!cancelled) {
-          setVision((current) => ({ ...current, online: false, error: error.message }));
-          setFaceState("AI vision is offline. Tab-switch protection is still on.");
+          setVision((current) => ({ ...current, online: starting ? null : false, error: error.message }));
+          setFaceState(starting ? "AI proctor is starting up. Tab-switch protection is already on." : "AI vision is offline. Tab-switch protection is still on.");
           drawDetections(overlayRef.current, video, [], "unknown");
         }
-        return VISION_RETRY_MS;
+        return starting ? VISION_INTERVAL_MS * 2 : VISION_RETRY_MS;
       }
 
       if (cancelled) {

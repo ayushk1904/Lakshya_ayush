@@ -201,6 +201,8 @@ async function generateGroqText({ modelConfig, systemPrompt, userPrompt }) {
     },
     body: JSON.stringify({
       model: modelConfig.model,
+      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
+      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
       temperature: 0.35,
       messages: [
         { role: "system", content: systemPrompt },

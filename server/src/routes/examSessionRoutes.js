@@ -7,7 +7,7 @@ const ExamSession = require("../models/ExamSession");
 const PreviousPaper = require("../models/PreviousPaper");
 const ChatRoom = require("../models/ChatRoom");
 const ChatMessage = require("../models/ChatMessage");
-const { analyzeFrame } = require("../services/proctorAiClient");
+const { analyzeFrame, warmProctor } = require("../services/proctorAiClient");
 const { addPaperPdf, fixFileName, isPdf, retryPaper, settleUnfinished } = require("../services/paperAnalysis");
 const { generatePracticeTest, warmPlanner } = require("../services/plannerAiClient");
 
@@ -45,6 +45,8 @@ async function generateGroqText({ modelConfig, systemPrompt, userPrompt }) {
     },
     body: JSON.stringify({
       model: modelConfig.model,
+      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
+      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
       temperature: 0.3,
       messages: [
         { role: "system", content: systemPrompt },
@@ -1031,10 +1033,17 @@ router.get("/active", async (req, res) => {
 
   const activeSession = await resolveCurrentSession(req.user._id);
   const sharedParticipants = await loadSharedParticipants(activeSession);
+  const incomingCall = buildIncomingCall(activeSession);
+
+  // Wake the proctor service from 5 minutes before the test call until the test ends, so the AI
+  // checks start at once instead of after a minute-long cold start.
+  if (activeSession?.status === "active" || (incomingCall && !incomingCall.expired && incomingCall.startsInMinutes <= 5)) {
+    warmProctor();
+  }
 
   return res.json({
     session: activeSession ? serializeSession({ ...activeSession.toObject(), sharedParticipants }) : null,
-    incomingCall: buildIncomingCall(activeSession)
+    incomingCall
   });
 });
 
