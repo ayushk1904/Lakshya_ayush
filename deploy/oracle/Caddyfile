@@ -1,5 +1,0 @@
-# Caddy gets and renews the HTTPS certificate for the domain by itself.
-__DOMAIN__ {
-	encode gzip
-	reverse_proxy 127.0.0.1:5000
-}
