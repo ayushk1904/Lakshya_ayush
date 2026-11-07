@@ -471,6 +471,12 @@ body.hub-call-open .nav-hide-button {
 @media (max-width: 780px) {
   .study-hub-screen .hub-header {
     padding: 12px 14px;
+    gap: 10px;
+  }
+
+  /* The header stacks vertically here, so its 280px flex-basis would become a 280px height. */
+  .study-hub-screen .hub-room-identity {
+    flex: 0 0 auto;
   }
 
   .study-hub-screen .hub-header-actions {

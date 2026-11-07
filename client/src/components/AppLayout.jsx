@@ -10,9 +10,10 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
-  Calendar
+  Calendar,
+  X
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import useStudyTimeTracker from "../hooks/useStudyTimeTracker";
@@ -31,6 +32,8 @@ const navItems = [
   { to: "/app/coach", label: "Last-Minute Coach", icon: AlarmClock },
   { to: "/app/progress", label: "My Progress", icon: LineChart }
 ];
+
+const MOBILE_NAV_QUERY = "(max-width: 1200px)";
 
 const routeMeta = {
   "/app/dashboard": { eyebrow: "Mission Control", title: "Dashboard" },
@@ -62,10 +65,28 @@ function AppLayout() {
   const currentRoute = routeMeta[pathname] || { eyebrow: "Lakshya", title: "Workspace" };
   const isHubRoute = pathname === "/app/hub";
   const [isNavbarHidden, setIsNavbarHidden] = useState(false);
+  // Phones and tablets: the sidebar is a drawer that the menu button slides in over the page.
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   useStudyTimeTracker(pathname);
 
+  useEffect(() => {
+    setIsMobileNavOpen(false);
+  }, [pathname]);
+
+  function toggleNavbar() {
+    if (window.matchMedia(MOBILE_NAV_QUERY).matches) {
+      setIsMobileNavOpen((current) => !current);
+    } else {
+      setIsNavbarHidden((current) => !current);
+    }
+  }
+
   return (
-    <div className={`app-shell ${isHubRoute ? "app-shell-hub" : ""} ${isNavbarHidden ? "app-shell-nav-hidden" : ""}`}>
+    <div
+      className={`app-shell ${isHubRoute ? "app-shell-hub" : ""} ${isNavbarHidden ? "app-shell-nav-hidden" : ""} ${
+        isMobileNavOpen ? "app-shell-mobile-nav-open" : ""
+      }`}
+    >
       <IncomingTestCall />
       <div className="shell-glow shell-glow-left" aria-hidden="true" />
       <div className="shell-glow shell-glow-right" aria-hidden="true" />
@@ -74,11 +95,13 @@ function AppLayout() {
         type="button"
         aria-label={isNavbarHidden ? "Show navbar" : "Hide navbar"}
         aria-pressed={isNavbarHidden}
+        aria-expanded={isMobileNavOpen}
         title={isNavbarHidden ? "Show navbar" : "Hide navbar"}
-        onClick={() => setIsNavbarHidden((current) => !current)}
+        onClick={toggleNavbar}
       >
-        <Menu size={18} />
+        {isMobileNavOpen ? <X size={18} /> : <Menu size={18} />}
       </button>
+      {isMobileNavOpen ? <div className="mobile-nav-backdrop" aria-hidden="true" onClick={() => setIsMobileNavOpen(false)} /> : null}
       <aside className={`sidebar ${isHubRoute ? "sidebar-hub" : ""}`}>
         <div className="brand-block">
           <BrandLogo />

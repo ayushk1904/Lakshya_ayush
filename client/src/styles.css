@@ -7675,3 +7675,226 @@ button {
     gap: 0 4px;
   }
 }
+
+/* Phones and tablets: the sidebar becomes a drawer behind the menu button instead of a block
+   stacked above every page. */
+@media (max-width: 1200px) {
+  .sidebar,
+  .app-shell-nav-hidden .sidebar {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 86vw);
+    height: 100dvh;
+    min-height: 0;
+    overflow-y: auto;
+    z-index: 80;
+    padding: 20px 16px;
+    background: var(--bg);
+    border-right: 1px solid var(--stroke);
+    border-bottom: 0;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .app-shell-mobile-nav-open .sidebar {
+    transform: none;
+    box-shadow: 18px 0 48px rgba(0, 0, 0, 0.22);
+  }
+
+  .sidebar .sidebar-card {
+    margin-top: 16px;
+  }
+
+  .mobile-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 75;
+    background: rgba(10, 12, 20, 0.38);
+    backdrop-filter: blur(2px);
+  }
+
+  .nav-hide-button,
+  .app-shell-nav-hidden .nav-hide-button {
+    z-index: 90;
+  }
+}
+
+/* Phones: one compact top bar. The page title stays readable, the theme and account buttons
+   shrink to icons, and room is left on the right for the fixed menu button. */
+@media (max-width: 1200px) {
+  .topbar {
+    padding-right: 72px;
+  }
+}
+
+@media (max-width: 780px) {
+  .topbar {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 10px 66px 10px 14px;
+    border-radius: 20px;
+  }
+
+  .topbar-left {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .topbar-copy {
+    min-width: 0;
+  }
+
+  .topbar-copy span {
+    font-size: 0.68rem;
+  }
+
+  .topbar-copy strong {
+    font-size: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .topbar-right {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .topbar .theme-trigger {
+    min-width: 0;
+    padding: 10px;
+    border-radius: 14px;
+    box-shadow: none;
+  }
+
+  .topbar .theme-trigger-copy,
+  .topbar .profile-button-copy,
+  .topbar .profile-button > svg {
+    display: none;
+  }
+
+  .topbar .profile-button {
+    width: auto;
+    padding: 3px;
+    border-radius: 50%;
+    box-shadow: none;
+  }
+
+  .topbar .profile-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .nav-hide-button,
+  .app-shell-nav-hidden .nav-hide-button {
+    top: 22px;
+    right: 22px;
+  }
+}
+
+/* Phones: dashboard shortcuts two per row instead of four tall, mostly empty cards. */
+@media (max-width: 780px) {
+  .dashboard-entrance-quick.quick-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .dashboard-entrance-quick .quick-card {
+    min-height: 0;
+    padding: 16px;
+    gap: 12px;
+  }
+}
+
+/* Single-column page layouts must be allowed to shrink below their content's natural width,
+   or a long line pushes the whole panel past the screen edge. */
+@media (max-width: 1200px) {
+  .explainer-grid,
+  .planner-simple-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .explainer-sidebar,
+  .explainer-main {
+    min-width: 0;
+  }
+}
+
+/* Phones: headings sized for a small screen, tighter panels. */
+@media (max-width: 780px) {
+  .screen-header h1,
+  .progress-screen h1 {
+    font-size: 2.1rem;
+    margin: 6px 0;
+  }
+
+  .screen h2,
+  .study-hub-layout h2,
+  .progress-screen h2 {
+    font-size: 1.45rem;
+    letter-spacing: -0.02em;
+  }
+
+  .ask-center h2 {
+    font-size: 2rem;
+  }
+
+  .ask-center p {
+    font-size: 0.98rem;
+    overflow-wrap: anywhere;
+  }
+
+  .explainer-sidebar {
+    padding: 18px 16px;
+  }
+
+  .explainer-body .chat-input-row {
+    padding: 12px;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .explainer-body .chat-input-row input {
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+  }
+
+  .explainer-body .send-button {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+  }
+}
+
+@media (max-width: 780px) {
+  .account-avatar-preview {
+    width: 140px;
+    height: 140px;
+  }
+}
+
+/* Phones: landing header with the logo and its three buttons centred. */
+@media (max-width: 780px) {
+  .landing-nav {
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .landing-nav .nav-actions {
+    width: 100%;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .landing-nav .theme-trigger {
+    min-width: 0;
+  }
+}
