@@ -50,9 +50,9 @@ function analysedPaperFields(analysed) {
   };
 }
 
-async function readPaper(buffer, fileName) {
+async function readPaper(buffer, fileName, onProgress) {
   try {
-    return { ...analysedPaperFields(await ingestPaper(buffer, fileName)), status: "ready", statusMessage: "", pendingPdf: null };
+    return { ...analysedPaperFields(await ingestPaper(buffer, fileName, onProgress)), status: "ready", statusMessage: "", pendingPdf: null };
   } catch (error) {
     console.error("practice-paper analysis error:", error.message);
     const message =
@@ -89,7 +89,17 @@ async function runQueue() {
   while (queue.length) {
     const { paperId, buffer, fileName } = queue.shift();
     try {
-      const update = await readPaper(buffer, fileName);
+      if (!(await PreviousPaper.exists({ _id: paperId, status: "analysing" }))) {
+        pending.delete(String(paperId));
+        continue;
+      }
+      await PreviousPaper.updateOne({ _id: paperId, status: "analysing" }, { $set: { statusMessage: "Opening the PDF..." } });
+      let lastMessage = "";
+      const update = await readPaper(buffer, fileName, async (event) => {
+        if (!event.message || event.message === lastMessage) return;
+        lastMessage = event.message;
+        await PreviousPaper.updateOne({ _id: paperId, status: "analysing" }, { $set: { statusMessage: event.message } }).catch((error) => console.warn("paper progress:", error.message));
+      });
       await PreviousPaper.updateOne({ _id: paperId, status: "analysing" }, { $set: update });
       await removeRawCopies(paperId);
     } catch (error) {
@@ -132,6 +142,7 @@ async function addPaperPdf({ userId, file, extractedText = "" }) {
     ...owner,
     extractedText,
     status: "analysing",
+    statusMessage: "Queued for reading...",
     pendingPdf: file.buffer.length <= MAX_STORED_PDF_BYTES ? file.buffer : null
   });
   enqueue(paper._id, file.buffer, fileName);
@@ -144,7 +155,7 @@ async function retryPaper(paper) {
   if (!stored?.pendingPdf?.length) {
     return false;
   }
-  await PreviousPaper.updateOne({ _id: paper._id }, { $set: { status: "analysing", statusMessage: "" } });
+  await PreviousPaper.updateOne({ _id: paper._id }, { $set: { status: "analysing", statusMessage: "Queued for reading..." } });
   enqueue(paper._id, stored.pendingPdf, stored.fileName);
   return true;
 }

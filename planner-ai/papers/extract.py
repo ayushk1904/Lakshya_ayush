@@ -14,6 +14,7 @@ import base64
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -201,7 +202,8 @@ def _cpu_threads() -> int:
                 return max(1, int(float(quota) / float(period)))
         except (OSError, ValueError):
             continue
-    return -1
+    # Unbounded ONNX thread pools compete with recognition and the other local apps.
+    return min(4, max(1, (os.cpu_count() or 2) // 2))
 
 
 def _disable_ort_memory_patterns() -> None:
@@ -234,17 +236,16 @@ def _ocr():
         threads = _cpu_threads()
         # The text-direction classifier sometimes flips a normal line and reads it as gibberish;
         # exam pages are never upside down, so it is turned off.
-        # Memory, for a 512 MB server: text is *found* on a copy of each band capped at 960 px
-        # (detection dominates memory) and *read* from the full-resolution band.
+        # Detect on small copies and recognise the original resolution to preserve equations.
         # ("max" also stops the default "min" rule from upscaling short bands.)
         _ocr_engine = RapidOCR(params={
             "Global.use_cls": False,
             "Global.log_level": "warning",
             "Det.limit_type": "max",
-            "Det.limit_side_len": 960,
-            "Rec.rec_batch_num": 1,  # batching is slower on one core and raises peak memory
+            "Det.limit_side_len": int(os.getenv("OCR_DET_SIDE_LEN") or 1280),
+            "Rec.rec_batch_num": int(os.getenv("OCR_REC_BATCH_SIZE") or 8),
             "EngineConfig.onnxruntime.intra_op_num_threads": threads,
-            "EngineConfig.onnxruntime.inter_op_num_threads": 1 if threads > 0 else -1,
+            "EngineConfig.onnxruntime.inter_op_num_threads": 1,
         })
     return _ocr_engine
 
@@ -254,10 +255,8 @@ OCR_OVERLAP = 120  # taller than any text line, so every line lies wholly inside
 
 
 def _ocr_items(page: pymupdf.Page) -> list[Item]:
-    """OCR in overlapping horizontal bands. Text detection on a whole 200-dpi page briefly needs
-    ~700 MB, more than a 512 MB server has; a band needs a fraction of that with the same accuracy.
-    Each line is kept from the band whose middle (non-overlapping) zone holds its centre, and only
-    then read, so lines in the overlaps are not recognised twice."""
+    """Detect text once per page, then recognise batched crops at the original 200-dpi resolution.
+    OCR_DETECTION_MODE=bands retains the low-memory path for constrained machines."""
     from rapidocr.utils.process_img import get_rotate_crop_image
 
     pixmap = page.get_pixmap(dpi=OCR_DPI, colorspace=pymupdf.csRGB)
@@ -266,15 +265,16 @@ def _ocr_items(page: pymupdf.Page) -> list[Item]:
     engine = _ocr()
     boxes, crops = [], []
 
+    use_bands = os.getenv("OCR_DETECTION_MODE", "page").lower() == "bands"
     step = OCR_BAND - OCR_OVERLAP
-    for top in range(0, max(1, pixmap.h - OCR_OVERLAP), step):
-        bottom = min(pixmap.h, top + OCR_BAND)
+    ranges = [(top, min(pixmap.h, top + OCR_BAND)) for top in range(0, max(1, pixmap.h - OCR_OVERLAP), step)] if use_bands else [(0, pixmap.h)]
+    for top, bottom in ranges:
         band = np.ascontiguousarray(image[top:bottom])
         found = engine(band, use_det=True, use_cls=False, use_rec=False)
         if getattr(found, "boxes", None) is None:
             continue
-        keep_from = top + (OCR_OVERLAP / 2 if top else 0)
-        keep_to = bottom - OCR_OVERLAP / 2 if bottom < pixmap.h else bottom
+        keep_from = top + (OCR_OVERLAP / 2 if use_bands and top else 0)
+        keep_to = bottom - OCR_OVERLAP / 2 if use_bands and bottom < pixmap.h else bottom
         for box in found.boxes:
             box = np.asarray(box, dtype=np.float32)
             if not keep_from <= top + (box[:, 1].min() + box[:, 1].max()) / 2 < keep_to:
@@ -464,16 +464,24 @@ def _crop_png(page: pymupdf.Page, rect: pymupdf.Rect) -> str:
     return "data:image/png;base64," + base64.b64encode(pixmap.tobytes("png")).decode()
 
 
-def extract_pdf(data: bytes) -> dict:
+def extract_pdf(data: bytes, on_progress=None) -> dict:
     """Returns {pages: [...], figures: [...], tables: [...], layout_text: str, ocr_pages: int}."""
-    document = pymupdf.open(stream=data, filetype="pdf")
+    with pymupdf.open(stream=data, filetype="pdf") as document:
+        return _extract_document(document, on_progress)
+
+
+def _extract_document(document, on_progress=None) -> dict:
     pages, figures, tables = [], [], []
     meta: dict = {}
 
     for page in document:
+        started = time.perf_counter()
         number = page.number + 1
         image_rects, is_scan = _strip_watermarks(page)
         readable = _text_is_readable(page)
+        if on_progress:
+            on_progress({"stage": "text" if readable else "ocr", "done": number - 1, "total": len(document),
+                         "message": f"{'Reading' if readable else 'Recognising text on'} page {number} of {len(document)}..."})
         items = _native_items(page) if readable else _ocr_items(page)
         method = "text" if readable else "ocr"
 
@@ -515,11 +523,13 @@ def extract_pdf(data: bytes) -> dict:
 
         rows.sort(key=lambda row: row.y)
         pages.append(PageResult(number=number, method=method, rows=rows))
+        log.info("paper page %s/%s: %s in %.2fs", number, len(document), method, time.perf_counter() - started)
+        if on_progress:
+            on_progress({"stage": "page", "done": number, "total": len(document), "message": f"Read {number} of {len(document)} pages."})
         # MuPDF caches decoded images and fonts with no size limit; on a long-running server that
         # grew with every paper read until the 512 MB instance was killed (seen live as 502s).
         pymupdf.TOOLS.store_shrink(100)
 
-    document.close()
     return {
         "meta": meta,
         "pages": [

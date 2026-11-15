@@ -7,6 +7,7 @@ every part its text, sub-items, marks, question type, topic and linked figures/t
 """
 
 import logging
+import os
 import re
 
 from rag.llm import LlmError, chat_json, is_llm_available
@@ -203,7 +204,7 @@ def _clean_part(part: dict, figure_ids: set[str], table_ids: set[str]) -> dict |
         "subitems": subitems,
         "marks": str(part.get("marks") or "").strip(),
         "type": infer_type(f"{text} {' '.join(subitems)}", figures, suggested),
-        "topic": str(part.get("topic") or "").strip()[:80],
+        "topic": str(part.get("topic") or infer_topic(text)).strip()[:80],
         "figures": figures,
         "tables": [t for t in part.get("tables") or [] if t in table_ids],
     }
@@ -430,17 +431,30 @@ def _annotate(structure: dict) -> dict:
     return structure
 
 
+def infer_topic(text: str) -> str:
+    """A source-derived topic label for retrieval, without rewriting the question."""
+    title = re.sub(r"^(?:explain|describe|discuss|define|compare|differentiate|write|find|calculate|determine|draw|give|what\s+is|what\s+are)\s+", "", text.strip(), flags=re.I)
+    title = re.split(r"[.?!]|\b(?:with (?:a |an )?(?:suitable )?example|with (?:a |an )?(?:neat )?diagram)\b", title, maxsplit=1, flags=re.I)[0]
+    return title[:80].strip(" ,:;") or text[:80]
+
+
 def structure_paper(extracted: dict) -> tuple[dict, str]:
     """Returns (structured paper, method): 'llm', 'rules+llm' or 'rules'.
 
-    The rule parser follows the printed labels, so when it finds every printed question it is the
-    authority on structure. The model's full structuring is used only if it agrees part-for-part
-    (models sometimes split "2 a"/"2 b" into two questions or turn numbered points into parts);
-    otherwise the model just annotates the rule-parsed parts with types and topics."""
+    Clear printed labels are parsed directly. The model is used to recover ambiguous layouts,
+    while optional enrichment adds topic labels without rewriting the whole paper."""
     by_rules = _normalize(_structure_with_rules(extracted), extracted)
-    expected_questions = len(printed_labels(extracted["layout_text"])[0])
+    printed_questions, printed_parts = printed_labels(extracted["layout_text"])
+    expected_questions = len(printed_questions)
     rule_shape = [len(question["parts"]) for question in by_rules["questions"]]
-    rules_reliable = bool(rule_shape) and len(rule_shape) == expected_questions and all(rule_shape)
+    rules_reliable = bool(rule_shape) and len(rule_shape) == expected_questions and all(rule_shape) and sum(rule_shape) >= len(printed_parts)
+
+    # Printed labels, marks and figures are already authoritative. Re-generating every line
+    # wastes tens of seconds per paper and can introduce transcription errors.
+    if rules_reliable:
+        if os.getenv("PAPER_AI_ENRICHMENT", "false").lower() == "true" and is_llm_available():
+            return _annotate(by_rules), "rules+llm"
+        return by_rules, "rules"
 
     if not is_llm_available():
         return by_rules, "rules"
@@ -453,20 +467,15 @@ def structure_paper(extracted: dict) -> tuple[dict, str]:
         f"Paper text:\n\"\"\"\n{extracted['layout_text'][:14000]}\n\"\"\""
     )
 
-    attempts = 1 if rules_reliable else 2
-    for _attempt in range(attempts):
+    for _attempt in range(2):
         try:
             structured = _normalize(chat_json(SYSTEM, prompt, max_tokens=6000, temperature=0.1, timeout=120), extracted)
         except LlmError as error:
             log.warning("LLM structuring failed (%s)", error)
             break
         shape = [len(question["parts"]) for question in structured["questions"]]
-        if rules_reliable and shape == rule_shape:
-            return structured, "llm"
-        if not rules_reliable and structured["questions"] and (not expected_questions or len(shape) == expected_questions):
+        if structured["questions"] and (not expected_questions or len(shape) == expected_questions):
             return structured, "llm"
         log.warning("LLM structure %s disagrees with the printed paper %s (%s questions printed)", shape, rule_shape, expected_questions)
 
-    if rules_reliable:
-        return _annotate(by_rules), "rules+llm"
     return by_rules, "rules"

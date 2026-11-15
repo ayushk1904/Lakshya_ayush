@@ -16,6 +16,7 @@ import gc
 import json
 import logging
 import os
+import queue
 import sys
 import threading
 from pathlib import Path
@@ -36,9 +37,8 @@ load_dotenv(Path(__file__).parent.parent / "server" / ".env")
 from rag.llm import is_llm_available  # noqa: E402  (imports after env is loaded)
 from rag.plan_builder import PlannerError, build_study_plan  # noqa: E402
 from rag.syllabus_ingest import iter_ingest  # noqa: E402
-from papers.extract import extract_pdf  # noqa: E402
 from papers.generate import generate_test  # noqa: E402
-from papers.structure import structure_paper  # noqa: E402
+from papers.reader import read_paper  # noqa: E402
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s: %(message)s")
 
@@ -118,8 +118,7 @@ def plan(request: PlanRequest):
 # --- Practice tests: previous-year paper RAG -------------------------------------------------
 
 MAX_PAPER_BYTES = 25 * 1024 * 1024
-# PyMuPDF is not safe to use from several threads at once; papers are extracted one at a time.
-paper_extract_lock = threading.Lock()
+# papers.reader serialises PyMuPDF/OCR access and caches completed analyses.
 
 
 class PaperIngestRequest(BaseModel):
@@ -155,21 +154,52 @@ async def papers_ingest_pdf(request: Request, x_file_name: str = Header(default=
     """The PDF as the raw request body. Base64 inside JSON held the paper in memory three times over
     (JSON text, parsed string, decoded bytes): ~100 MB for a large scan on a 512 MB server."""
     data = await request.body()
+    if "application/x-ndjson" in request.headers.get("accept", ""):
+        return StreamingResponse(paper_events(data, unquote(x_file_name)), media_type="application/x-ndjson")
     return await run_in_threadpool(ingest_paper_bytes, data, unquote(x_file_name))
 
 
-def ingest_paper_bytes(data: bytes, file_name: str) -> dict:
+def paper_events(data, file_name):
+    events = queue.Queue()
+    cancelled = threading.Event()
+
+    def progress(event):
+        if cancelled.is_set():
+            raise InterruptedError("Paper reading cancelled")
+        events.put({"type": "progress", **event})
+
+    def run():
+        try:
+            result = ingest_paper_bytes(data, file_name, progress)
+            events.put({"type": "result", "data": result})
+        except HTTPException as error:
+            events.put({"type": "error", "status": error.status_code, "message": str(error.detail)})
+        except Exception as error:
+            events.put({"type": "error", "status": 500, "message": str(error)})
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    try:
+        while True:
+            try:
+                event = events.get(timeout=10)
+            except queue.Empty:
+                event = {"type": "heartbeat"}
+            yield json.dumps(event) + "\n"
+            if event["type"] in ("result", "error"):
+                break
+    finally:
+        cancelled.set()
+
+
+def ingest_paper_bytes(data: bytes, file_name: str, on_progress=None) -> dict:
     if len(data) > MAX_PAPER_BYTES:
         raise HTTPException(status_code=413, detail="The paper PDF is larger than 25 MB")
     if not data.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="Only PDF question papers are supported")
 
     try:
-        with paper_extract_lock:
-            try:
-                extracted = extract_pdf(data)
-            finally:
-                release_memory()
+        result = read_paper(data, on_progress)
     except ImportError as error:  # OCR/PDF packages missing: a server problem, not a bad PDF
         log.exception("paper extraction dependencies missing")
         raise HTTPException(
@@ -179,20 +209,12 @@ def ingest_paper_bytes(data: bytes, file_name: str) -> dict:
     except Exception as error:  # corrupt or encrypted PDFs
         log.exception("paper extraction failed for %s", file_name)
         raise HTTPException(status_code=400, detail=f"Could not read this PDF: {error}") from error
+    finally:
+        release_memory()
 
-    structure, method = structure_paper(extracted)
-    if not structure["questions"]:
+    if not result["structure"]["questions"]:
         raise HTTPException(status_code=422, detail="No questions could be found in this paper.")
-    return {
-        "meta": extracted["meta"],
-        "structure": structure,
-        "structure_method": method,
-        "figures": extracted["figures"],
-        "tables": extracted["tables"],
-        "layout_text": extracted["layout_text"],
-        "ocr_pages": extracted["ocr_pages"],
-        "page_count": len(extracted["pages"]),
-    }
+    return result
 
 
 @app.post("/papers/generate", dependencies=[Depends(require_token)])

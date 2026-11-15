@@ -152,13 +152,17 @@ async function buildPlan(payload) {
 
 // Previous-year paper PDF -> structured questions, figures and tables (OCR when the PDF's text
 // layer is unreadable, which is common for protected university papers).
-async function ingestPaper(buffer, fileName) {
+async function ingestPaper(buffer, fileName, onProgress) {
   let response = await plannerFetch("/papers/ingest-pdf", Buffer.from(buffer), 30 * 60 * 1000, 4, {
+    Accept: "application/x-ndjson",
     "X-File-Name": encodeURIComponent(fileName || "paper.pdf")
   });
   if (response.status === 404) {
     // A planner deployed before /papers/ingest-pdf existed.
     response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 30 * 60 * 1000);
+  }
+  if (response.ok && response.headers.get("content-type")?.includes("application/x-ndjson")) {
+    return readPaperStream(response, onProgress);
   }
   const data = await response.json().catch(() => ({}));
 
@@ -168,6 +172,34 @@ async function ingestPaper(buffer, fileName) {
     throw serviceError(detail || fallback, [400, 413, 422].includes(response.status) ? 400 : 502);
   }
   return data;
+}
+
+async function readPaperStream(response, onProgress) {
+  const decoder = new TextDecoder();
+  let pending = "";
+  let result = null;
+  async function event(line) {
+    if (!line.trim()) return;
+    const item = JSON.parse(line);
+    if (item.type === "progress") await onProgress?.(item);
+    if (item.type === "result") result = item.data;
+    if (item.type === "error") throw serviceError(item.message || "Could not read this paper", [400, 413, 422].includes(item.status) ? 400 : 502);
+  }
+  try {
+    for await (const chunk of response.body) {
+      pending += decoder.decode(chunk, { stream: true });
+      const lines = pending.split("\n");
+      pending = lines.pop();
+      for (const line of lines) await event(line);
+    }
+    pending += decoder.decode();
+    if (pending.trim()) await event(pending);
+  } catch (error) {
+    if (error.status) throw error;
+    throw serviceError("Lost the connection while reading the paper. Please retry.", 503);
+  }
+  if (!result) throw serviceError("Paper reading ended without a result. Please retry.", 503);
+  return result;
 }
 
 // Check readiness when the Practice Tests page opens.

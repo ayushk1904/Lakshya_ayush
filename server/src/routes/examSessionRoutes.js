@@ -340,7 +340,8 @@ function serializePaper(document) {
     statusMessage: document.statusMessage || "",
     questionCount: (document.structure?.questions || []).reduce((sum, question) => sum + (question.parts?.length || 0), 0),
     tableCount: document.tables?.length || 0,
-    ocrPages: document.ocrPages || 0
+    ocrPages: document.ocrPages || 0,
+    pageCount: document.pageCount || 0
   };
 }
 

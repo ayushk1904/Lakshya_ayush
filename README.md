@@ -103,6 +103,9 @@ Uploads and saved study information remain in your configured MongoDB database.
 | `OLLAMA_NUM_CTX`, `OLLAMA_MAX_CTX` | Default `8192` and `16384`. Short requests use the smaller GPU context; long evidence gets more room. |
 | `OLLAMA_KEEP_ALIVE` | Default `-1`: keep Qwen loaded between requests. |
 | `OLLAMA_LOG_TIMINGS` | Set `true` to log token counts and timing, without logging document text. |
+| `PAPER_AI_ENRICHMENT` | Default `false`: clear paper layouts are parsed directly; ambiguous layouts still use Qwen. |
+| `OCR_THREADS`, `OCR_REC_BATCH_SIZE` | Default four CPU threads and eight text lines per OCR batch. |
+| `OCR_DETECTION_MODE`, `OCR_DET_SIDE_LEN` | Default `page` and `1280`; use `bands` for the low-memory detection path. |
 | `NGROK_DOMAIN` | Your assigned fixed hostname; required by `start-fixed-link.bat`. |
 | `NGROK_AUTHTOKEN` | Optional project-specific account token. The launcher explicitly selects it through a temporary private ngrok config. |
 | `HOST`, `PORT` | Default `127.0.0.1` and `5000`. The ngrok launcher tunnels this port. |
@@ -143,6 +146,9 @@ build through Express. Optional client settings are documented in `client/.env.e
 - **Database disconnected:** start MongoDB or fix `MONGODB_URI`. Authentication needs MongoDB;
   the launcher stops before opening a public tunnel if the database is unavailable.
 - **Python package missing:** install both requirements files using the Python inside `.venv`.
+- **Paper reading:** selectable, readable text avoids OCR. Scans and encoded-font PDFs need OCR;
+  the page now shows the current page and stage. Completed analyses are cached for later uploads,
+  and a clearly numbered paper no longer waits for a full AI transcription.
 - **Port already in use:** a healthy existing Lakshya app is reused. If a different app occupies
   the configured port, choose another `PORT` or stop that conflicting service. The launcher also
   checks ports 8001 and 8002 before starting new AI services.

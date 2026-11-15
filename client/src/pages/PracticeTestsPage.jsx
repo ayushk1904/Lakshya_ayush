@@ -38,7 +38,7 @@ function plural(count, word) {
 // "Analysis of Algorithm · 17 questions · 2 diagrams · read with OCR"
 function describePaper(paper) {
   if (paper.status === "analysing") {
-    return "Reading the paper... Scanned pages take about a minute each.";
+    return paper.statusMessage || "Reading the paper...";
   }
 
   if (paper.status === "failed") {
@@ -122,7 +122,8 @@ function PracticeTestsPage() {
 
   // Uploaded PDFs are read in the background; check on them until none is left "analysing".
   const readingCount = papers.filter((paper) => paper.status === "analysing").length;
-  const selectedStillReading = papers.some((paper) => paper.status === "analysing" && selectedPaperIds.includes(paper._id));
+  const selectedReadingCount = papers.filter((paper) => paper.status === "analysing" && selectedPaperIds.includes(paper._id)).length;
+  const selectedStillReading = selectedReadingCount > 0;
   const papersRef = useRef(papers);
   papersRef.current = papers;
 
@@ -155,7 +156,7 @@ function PracticeTestsPage() {
           }
         })
         .catch(() => {});
-    }, 5000);
+    }, 1500);
 
     return () => window.clearInterval(intervalId);
   }, [readingCount]);
@@ -421,7 +422,7 @@ function PracticeTestsPage() {
 
             <div className="button-row">
               <button className="primary-button" type="button" onClick={generateTest} disabled={generating || selectedStillReading}>
-                {generating ? "Generating..." : selectedStillReading ? "Reading papers..." : "Generate Test"}
+                {generating ? "Generating..." : selectedStillReading ? `Reading ${selectedReadingCount} ${selectedReadingCount === 1 ? "paper" : "papers"}...` : "Generate Test"}
               </button>
               <span className="subtle">
                 {studyRooms.length

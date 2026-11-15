@@ -28,6 +28,21 @@ Health check: `GET http://127.0.0.1:8001/health`. API docs: `http://127.0.0.1:80
 | Plan | `rag/plan_builder.py` | Understand the request (semester / subject / days left / hours per day), score units, share time fairly between subjects, build an exact timetable, then let the LLM write a strategy grounded in the retrieved units and the real schedule. |
 | LLM | `rag/llm.py` | Local Ollama Qwen in JSON mode. Indexes one subject at a time to fit a single GPU; uses rules when Ollama or the model is unavailable. |
 
+## Reading question papers
+
+Papers with clear printed numbering are structured directly from the extracted layout. Their
+questions, marks, choices, tables and diagrams are retained without making Qwen transcribe the
+whole paper again. Ambiguous layouts still use AI structuring. Set `PAPER_AI_ENRICHMENT=true`
+only if you want optional AI topic annotation on every clearly numbered paper.
+
+OCR recognises crops at 200 dpi, with one text-detection pass per page, four CPU threads and
+batches of eight lines by default. `OCR_THREADS`, `OCR_REC_BATCH_SIZE` and `OCR_DET_SIDE_LEN`
+can tune this. Use `OCR_DETECTION_MODE=bands` if the machine needs the older low-memory path.
+
+Completed results are cached by PDF content and reader version under `planner-ai/.cache/papers`.
+Identical uploads and restarts reuse the saved result. The Express backend receives page/stage
+updates through NDJSON, which the Practice Tests page displays while reading continues.
+
 ## Endpoints
 
 - `POST /ingest` `{ "text": "<syllabus text>" }` streams newline-delimited JSON: `progress` events, then one `result` with `subjects`, `chunks`, `semesters`.
