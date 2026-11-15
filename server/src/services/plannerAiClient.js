@@ -13,8 +13,7 @@ const GATEWAY_STATUSES = new Set([502, 503, 504]);
 let lastAwakeAt = 0;
 let wakeUp = null;
 
-// A free Render instance sleeps after 15 idle minutes. While it wakes (about a minute) Render
-// answers requests with an instant 502, so calls first wait for /health to answer.
+// Wait for the local planner to finish starting before sending AI requests.
 function waitForPlanner(maxMs = 3 * 60 * 1000) {
   if (Date.now() - lastAwakeAt < 60 * 1000) {
     return Promise.resolve();
@@ -71,7 +70,7 @@ async function plannerFetch(path, body, timeoutMs, attempts = 4, extraHeaders = 
       continue;
     }
 
-    // Render's gateway errors (instance waking, restarting or briefly overloaded) are worth a retry.
+    // Retry temporary service errors during startup or a restart.
     if (GATEWAY_STATUSES.has(response.status) && attempt < attempts) {
       lastAwakeAt = 0;
       await sleep(3000 * attempt);
@@ -141,7 +140,7 @@ async function ingestSyllabus(text, onProgress, attempts = 3) {
 }
 
 async function buildPlan(payload) {
-  const response = await plannerFetch("/plan", payload, 3 * 60 * 1000);
+  const response = await plannerFetch("/plan", payload, 15 * 60 * 1000);
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -154,12 +153,12 @@ async function buildPlan(payload) {
 // Previous-year paper PDF -> structured questions, figures and tables (OCR when the PDF's text
 // layer is unreadable, which is common for protected university papers).
 async function ingestPaper(buffer, fileName) {
-  let response = await plannerFetch("/papers/ingest-pdf", Buffer.from(buffer), 10 * 60 * 1000, 4, {
+  let response = await plannerFetch("/papers/ingest-pdf", Buffer.from(buffer), 30 * 60 * 1000, 4, {
     "X-File-Name": encodeURIComponent(fileName || "paper.pdf")
   });
   if (response.status === 404) {
     // A planner deployed before /papers/ingest-pdf existed.
-    response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 10 * 60 * 1000);
+    response = await plannerFetch("/papers/ingest", { pdf_base64: buffer.toString("base64"), file_name: fileName }, 30 * 60 * 1000);
   }
   const data = await response.json().catch(() => ({}));
 
@@ -171,15 +170,14 @@ async function ingestPaper(buffer, fileName) {
   return data;
 }
 
-// A free Render instance sleeps after 15 idle minutes and takes about a minute to wake. Pinging
-// it when the Practice Tests page opens means it is usually awake by the time a paper is chosen.
+// Check readiness when the Practice Tests page opens.
 function warmPlanner() {
   waitForPlanner().catch(() => {});
 }
 
 // Structured papers -> a new practice test in the same format (RAG over the selected papers).
 async function generatePracticeTest(payload) {
-  const response = await plannerFetch("/papers/generate", payload, 4 * 60 * 1000);
+  const response = await plannerFetch("/papers/generate", payload, 30 * 60 * 1000);
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {

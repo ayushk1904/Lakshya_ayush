@@ -1,3 +1,4 @@
+const { getModel, generateModelJson } = require("../services/ollamaClient");
 // routes/studyPlanRoutes.js
 const express = require("express");
 const multer = require("multer");
@@ -182,6 +183,7 @@ function buildFallbackPlannerItems(revisionItems = []) {
 
 async function extractRevisionItemsWithAi({ modelConfig, text }) {
   const aiResult = await generateModelJson({
+    maxTokens: 2200,
     modelConfig,
     systemPrompt: `You are Lakshya AI preparing a voice revision session from a student's uploaded PDF.
 Return valid JSON only.
@@ -211,7 +213,7 @@ Rules:
 
 PDF text:
 """${text.slice(0, 14000)}"""`,
-    temperature: modelConfig.provider === "xai" ? 0.1 : 0.15
+    temperature: 0.15
   });
 
   const rawItems = Array.isArray(aiResult?.items) ? aiResult.items : [];
@@ -220,6 +222,7 @@ PDF text:
 
 async function extractPlannerItemsWithAi({ modelConfig, text }) {
   const aiResult = await generateModelJson({
+    maxTokens: 2200,
     modelConfig,
     systemPrompt: `You are Lakshya AI building a study plan from a student's syllabus PDF.
 Return valid JSON only.
@@ -265,7 +268,7 @@ Important:
 
 PDF text:
 """${text.slice(0, 18000)}"""`,
-    temperature: modelConfig.provider === "xai" ? 0.1 : 0.15
+    temperature: 0.15
   });
 
   const rawItems = Array.isArray(aiResult?.items) ? aiResult.items : [];
@@ -279,58 +282,6 @@ PDF text:
     items,
     planSummary: cleanText(aiResult?.planSummary)
   };
-}
-
-function getModel() {
-  if (process.env.XAI_API_KEY) {
-    return {
-      provider: "xai",
-      apiKey: process.env.XAI_API_KEY,
-      baseUrl: "https://api.x.ai/v1/chat/completions",
-      model: process.env.XAI_MODEL || "grok-4-1-fast-reasoning"
-    };
-  }
-
-  if (process.env.GROQ_API_KEY) {
-    return {
-      provider: "groq",
-      apiKey: process.env.GROQ_API_KEY,
-      baseUrl: "https://api.groq.com/openai/v1/chat/completions",
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-20b"
-    };
-  }
-
-  return null;
-}
-
-async function generateModelJson({ modelConfig, systemPrompt, userPrompt, temperature = 0.3 }) {
-  const response = await fetch(modelConfig.baseUrl, {
-    method: "POST",
-    signal: AbortSignal.timeout(30000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${modelConfig.apiKey}`
-    },
-    body: JSON.stringify({
-      model: modelConfig.model,
-      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
-      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
-      temperature,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `${modelConfig.provider} request failed`);
-  }
-
-  return JSON.parse(data?.choices?.[0]?.message?.content || "{}");
 }
 
 function buildFallbackQuestion({ learnerName, topics, questionIndex }) {
@@ -596,6 +547,7 @@ router.post("/voice-revision/start", authMiddleware, async (req, res) => {
     }
 
     const aiResult = await generateModelJson({
+      maxTokens: 500,
       modelConfig: model,
       systemPrompt: `You are Lakshya AI, a warm but concise oral revision coach for Indian students.
 Return valid JSON only.
@@ -629,7 +581,7 @@ ${JSON.stringify(topics, null, 2)}
 
 Study material excerpt:
 """${studyMaterial.slice(0, 12000)}"""`,
-      temperature: model.provider === "xai" ? 0.15 : 0.2
+      temperature: 0.2
     });
 
     const safeQuestion = sanitizeNextQuestion(
@@ -649,7 +601,7 @@ Study material excerpt:
       question: String(safeQuestion?.question || ""),
       topic: String(safeQuestion?.topic || ""),
       expectedPoints: Array.isArray(safeQuestion?.expectedPoints) ? safeQuestion.expectedPoints.map((item) => String(item)) : [],
-      source: "groq"
+      source: "ollama"
     });
   } catch (error) {
     console.error("voice-revision start error:", error);
@@ -698,6 +650,7 @@ router.post("/voice-revision/evaluate", authMiddleware, async (req, res) => {
     }
 
     const aiResult = await generateModelJson({
+      maxTokens: 1000,
       modelConfig: model,
       systemPrompt: `You are Lakshya AI, an oral revision coach.
 Return valid JSON only.
@@ -751,7 +704,7 @@ ${JSON.stringify(topics, null, 2)}
 
 Study material excerpt:
 """${studyMaterial.slice(0, 12000)}"""`,
-      temperature: model.provider === "xai" ? 0.1 : 0.15
+      temperature: 0.15
     });
 
     const evaluation = aiResult.evaluation && typeof aiResult.evaluation === "object" ? aiResult.evaluation : {};
@@ -774,7 +727,7 @@ Study material excerpt:
         verdict: String(evaluation.verdict || "Keep going"),
         feedback: String(evaluation.feedback || "Refine your answer with more topic-specific points."),
         scoreLabel: String(evaluation.scoreLabel || "Medium"),
-        source: "groq"
+        source: "ollama"
       },
       coachReply,
       nextQuestion: nextQuestion

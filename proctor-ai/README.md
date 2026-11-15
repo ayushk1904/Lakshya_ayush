@@ -16,11 +16,12 @@ repeats across several frames. Frames are processed in memory and never stored.
 ## Run locally
 
 ```bash
-pip install -r proctor-ai/requirements.txt
+.venv\Scripts\python -m pip install -r proctor-ai/requirements.txt
 npm run proctor            # http://127.0.0.1:8002  (npm run proctor:dev to auto-reload)
 ```
 
-The backend reaches it through `PROCTOR_AI_URL` (default `http://127.0.0.1:8002`). If
+`npm start` or `start.bat` starts this service with the rest of the app. The shared root `.venv`
+is used automatically. The backend reaches it through `PROCTOR_AI_URL` (default `http://127.0.0.1:8002`). If
 `PROCTOR_AI_TOKEN` is set, use the same value in `server/.env` and for this service.
 
 ## API

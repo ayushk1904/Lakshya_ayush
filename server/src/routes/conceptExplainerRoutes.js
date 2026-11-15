@@ -1,3 +1,5 @@
+const { buildStudyContext } = require("../utils/studyContext");
+const { getModel, generateText } = require("../services/ollamaClient");
 const express = require("express");
 const mongoose = require("mongoose");
 const multer = require("multer");
@@ -11,107 +13,31 @@ const YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3/search";
 
 router.use(authMiddleware);
 
-function getModel() {
-  const apiKey = process.env.GROQ_API_KEY;
+async function generateConceptAnswerSet({ modelConfig, question, context, signal }) {
+  const result = await generateText({
+    modelConfig,
+    signal,
+    maxTokens: 1800,
+    systemPrompt: `You are Lakshya's AI Concept Explainer. Use the study passages as your main source.
+Return markdown. First write the main answer, then a section headed exactly "## Easy Explanation".
+The answer should be clear, accurate and concise (at most 450 words), with steps or an example when useful.
+Include a small ASCII diagram in a fenced text block if the student asks for one.
+Explain every operation the question asks about. Mention gaps in the notes.
+The Easy Explanation section should use 3-5 short points (at most 90 words).
+Do not repeat the whole answer in the easy explanation.`,
+    userPrompt: `Question: ${question}
 
-  if (!apiKey) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    model: process.env.GROQ_MODEL || "openai/gpt-oss-20b"
-  };
-}
-
-async function generateGroqText({ modelConfig, systemPrompt, userPrompt }) {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${modelConfig.apiKey}`
-    },
-    body: JSON.stringify({
-      model: modelConfig.model,
-      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
-      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    })
+Study passages:
+${context}`
   });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Groq request failed");
-  }
-
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
-
-async function generateConceptAnswerSet({ modelConfig, question, context }) {
-  const systemPrompt = `You are Lakshya's AI Concept Explainer.
-Use the provided study documents as the main source of truth.
-Explain topics in easy language for exam preparation.
-Always respond in clean markdown.`;
-
-  const detailedPrompt = `Answer the student's question in easy language.
-
-Rules:
-- Start with a short plain-language definition.
-- Break the answer into short sections with markdown headings.
-- If the question asks for a solution, show the steps clearly.
-- Use bullet points where they improve readability.
-- If a diagram would help, include a simple ASCII diagram in a fenced code block.
-- If the original PDF likely had a diagram, explain it in words and provide a clean ASCII version when possible.
-- Mention if the document does not fully cover the topic.
-- End with a quick recap in 2 bullet points.
-
-Question:
-${question}
-
-Study documents:
-"""${context}"""`;
-
-  const easyPrompt = `Create a second, simpler explanation for the same student question.
-
-Rules:
-- Write for a student who wants the easiest possible explanation.
-- Keep it short, friendly, and very clear.
-- Use markdown.
-- Start with the heading "## Easy Explanation".
-- Use only 3 to 5 short points or mini paragraphs.
-- If the topic involves a process or solution, explain it in very simple step-by-step form.
-- Avoid long technical wording unless absolutely needed.
-- End with a short "### In one line" summary.
-
-Question:
-${question}
-
-Study documents:
-"""${context}"""`;
-
-  const [answer, easyExplanation] = await Promise.all([
-    generateGroqText({
-      modelConfig,
-      systemPrompt,
-      userPrompt: detailedPrompt
-    }),
-    generateGroqText({
-      modelConfig,
-      systemPrompt,
-      userPrompt: easyPrompt
-    })
-  ]);
-
+  const boundary = result.search(/^#{1,3}\s*Easy Explanation\s*$/im);
+  const answer = boundary > 0 ? result.slice(0, boundary).trim() : result.trim();
+  const easyExplanation = boundary > 0 ? result.slice(boundary).trim()
+    : "## Easy Explanation\n\n" + answer.replace(/```[\s\S]*?```/g, " ").replace(/[#*_`]/g, "").split(/(?<=[.!?])\s+/).slice(0, 3).join(" ");
   return { answer, easyExplanation };
 }
 
-async function generateQuizWithModel({ modelConfig, documents, questionCount }) {
+async function generateQuizWithModel({ modelConfig, documents, questionCount, signal }) {
   const systemPrompt = `You are Lakshya's study game generator.
 Create a quiz only from the provided study documents.
 Return valid JSON only. Do not include markdown fences or extra text.`;
@@ -129,13 +55,33 @@ Rules:
   - "explanation": short string that teaches the idea
   - "sourceLabel": short string with the source document name
 - Every question must be answerable from the notes.
-- Keep wording simple for students.
+- Keep wording simple for students. Use short options and one-sentence explanations.
 - Avoid duplicate questions.
 
 Study documents:
-"""${documents.map((document, index) => `Document ${index + 1}: ${document.fileName}\n${document.extractedText.slice(0, 5000)}`).join("\n\n")}"""`;
+"""${buildStudyContext(documents)}"""`;
 
-  const raw = await generateGroqText({
+  const raw = await generateText({
+    json: {
+      type: "object", required: ["title", "questions"],
+      properties: {
+        title: { type: "string" },
+        questions: {
+          type: "array", minItems: questionCount, maxItems: questionCount,
+          items: {
+            type: "object", required: ["prompt", "options", "answerIndex", "explanation", "sourceLabel"],
+            properties: {
+              prompt: { type: "string" },
+              options: { type: "array", minItems: 4, maxItems: 4, items: { type: "string" } },
+              answerIndex: { type: "integer", minimum: 0, maximum: 3 },
+              explanation: { type: "string" }, sourceLabel: { type: "string" }
+            }
+          }
+        }
+      }
+    },
+    signal,
+    maxTokens: Math.max(900, questionCount * 220),
     modelConfig,
     systemPrompt,
     userPrompt
@@ -585,16 +531,15 @@ router.post("/ask", async (req, res) => {
     return res.status(400).json({ message: "Upload at least one study document before asking the AI explainer." });
   }
 
-  const context = documents
-    .map((document, index) => `Document ${index + 1}: ${document.fileName}\n${document.extractedText.slice(0, 6000)}`)
-    .join("\n\n");
-  let videos = [];
-
-  try {
-    videos = await fetchYoutubeVideos(question);
-  } catch (error) {
+  const context = buildStudyContext(documents, question);
+  // Video search must run alongside AI generation instead of delaying its start.
+  const videosPromise = fetchYoutubeVideos(question).catch((error) => {
     console.error("concept-explainer youtube error:", error);
-  }
+    return [];
+  });
+  let videos = [];
+  const controller = new AbortController();
+  res.on("close", () => { if (!res.writableEnded) controller.abort(); });
 
   if (!model) {
     return res.json({
@@ -608,21 +553,23 @@ router.post("/ask", async (req, res) => {
   }
 
   try {
-    const { answer, easyExplanation } = await generateConceptAnswerSet({
-      modelConfig: model,
-      question,
-      context
-    });
+    const [{ answer, easyExplanation }, relatedVideos] = await Promise.all([
+      generateConceptAnswerSet({ modelConfig: model, question, context, signal: controller.signal }),
+      videosPromise
+    ]);
+    videos = relatedVideos;
 
     return res.json({
       answer,
       easyExplanation,
       videos,
       documents: documents.map(serializeDocument),
-      source: "groq"
+      source: "ollama"
     });
   } catch (error) {
+    if (controller.signal.aborted) return;
     console.error("concept-explainer ask error:", error);
+    videos = await videosPromise;
     return res.json({
       answer: buildFallbackAnswer({ question, documents }),
       easyExplanation: buildFallbackEasyExplanation({ question, documents }),
@@ -655,10 +602,12 @@ router.post("/game", async (req, res) => {
   }
 
   const model = getModel();
+  const controller = new AbortController();
+  res.on("close", () => { if (!res.writableEnded) controller.abort(); });
 
   try {
     const quiz = model
-      ? normalizeQuizPayload(await generateQuizWithModel({ modelConfig: model, documents, questionCount }), documents, questionCount)
+      ? normalizeQuizPayload(await generateQuizWithModel({ modelConfig: model, documents, questionCount, signal: controller.signal }), documents, questionCount)
       : buildFallbackQuiz({ documents, questionCount });
 
     if (!quiz.questions.length) {
@@ -667,10 +616,11 @@ router.post("/game", async (req, res) => {
 
     return res.json({
       quiz,
-      source: model ? "groq" : "fallback",
+      source: model ? "ollama" : "fallback",
       warning: model ? "" : "AI quiz generation is unavailable, so Lakshya built the game directly from your uploaded notes."
     });
   } catch (error) {
+    if (controller.signal.aborted) return;
     console.error("concept-explainer game error:", error);
     const quiz = buildFallbackQuiz({ documents, questionCount });
 

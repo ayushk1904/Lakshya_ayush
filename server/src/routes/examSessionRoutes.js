@@ -1,3 +1,4 @@
+const { getModel, generateText } = require("../services/ollamaClient");
 const express = require("express");
 const mongoose = require("mongoose");
 const multer = require("multer");
@@ -21,48 +22,6 @@ const DEFAULT_PAPER_INSTRUCTIONS = [
 ];
 
 router.use(authMiddleware);
-
-function getModel() {
-  const apiKey = process.env.GROQ_API_KEY;
-
-  if (!apiKey) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    model: process.env.GROQ_MODEL || "openai/gpt-oss-20b"
-  };
-}
-
-async function generateGroqText({ modelConfig, systemPrompt, userPrompt }) {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${modelConfig.apiKey}`
-    },
-    body: JSON.stringify({
-      model: modelConfig.model,
-      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
-      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Groq request failed");
-  }
-
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
 
 async function extractDocumentText(file) {
   if (file.mimetype === "application/pdf") {
@@ -928,7 +887,8 @@ router.post("/generate-test", async (req, res) => {
     warning = "AI model is not configured, so the test was generated from extracted paper text.";
   } else {
     try {
-      generatedTest = await generateGroqText({
+      generatedTest = await generateText({
+        maxTokens: 4096,
         modelConfig: model,
         systemPrompt:
           "You are Lakshya's exam generator. Analyze previous year question papers, detect the recurring topics and formatting pattern, and create a fresh paper in the same exam-paper style. Always respond as a clean markdown exam paper only.",

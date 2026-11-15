@@ -390,7 +390,7 @@ def extract_segment(segment: dict, use_llm: bool) -> tuple[list[dict], bool, boo
 def iter_ingest(raw_text: str) -> Iterator[dict]:
     """Yield {"type": "progress", ...} updates, then one {"type": "result", ...}.
 
-    Subjects are extracted in parallel (one worker per model in the pool) and cached on disk,
+    Subjects are extracted one at a time on the local Qwen model and cached on disk,
     so re-indexing the same syllabus is instant.
     """
     text = clean_pdf_text(raw_text)
@@ -410,7 +410,7 @@ def iter_ingest(raw_text: str) -> Iterator[dict]:
         while pending:
             finished, pending = wait(pending, timeout=HEARTBEAT_SECONDS, return_when=FIRST_COMPLETED)
             if not finished:
-                # Keep the HTTP stream alive while models are rate limited.
+                # Keep the HTTP stream alive while the local model is answering.
                 yield {"type": "heartbeat"}
             for future in finished:
                 results[futures[future]] = future.result()

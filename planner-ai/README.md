@@ -6,12 +6,15 @@ file uploads and MongoDB, then calls this service for all the AI work.
 ## Run it
 
 ```bash
-pip install -r planner-ai/requirements.txt   # once
+.venv\Scripts\python -m pip install -r planner-ai/requirements.txt   # once
+ollama pull qwen2.5:7b
 npm run planner                              # from the repo root -> http://127.0.0.1:8001
 ```
 
-Keep it running next to `npm run server` and `npm run client`.
-It reads `GROQ_API_KEY` / `GROQ_MODEL` from `server/.env` (a `planner-ai/.env` overrides them).
+`npm start` or `start.bat` starts it with the full app. For development, keep it running next to
+`npm run server` and `npm run client`. It reads `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (default
+`qwen2.5:7b`) and `OLLAMA_TIMEOUT_SECONDS` (default `300`) from the root `.env`, with
+`server/.env` as a fallback and `planner-ai/.env` taking precedence. No AI API key is needed.
 Health check: `GET http://127.0.0.1:8001/health`. API docs: `http://127.0.0.1:8001/docs`.
 
 ## How the RAG pipeline works
@@ -23,7 +26,7 @@ Health check: `GET http://127.0.0.1:8001/health`. API docs: `http://127.0.0.1:80
 | Retrieve | `rag/text_utils.py` | BM25 search over the unit chunks finds units the student explicitly mentions ("focus on backpropagation"). |
 | Electives | `rag/electives.py` | Optional courses (e.g. `CSDLO6011/6012/6013`) are grouped. A semester plan keeps only the student's choice; if it is unknown, `/plan` returns `needsChoice` (a question with options) instead of a plan. "excluding optional courses" drops them all. |
 | Plan | `rag/plan_builder.py` | Understand the request (semester / subject / days left / hours per day), score units, share time fairly between subjects, build an exact timetable, then let the LLM write a strategy grounded in the retrieved units and the real schedule. |
-| LLM | `rag/llm.py` | Groq client in JSON mode, paced to the free tier's tokens-per-minute limit. |
+| LLM | `rag/llm.py` | Local Ollama Qwen in JSON mode. Indexes one subject at a time to fit a single GPU; uses rules when Ollama or the model is unavailable. |
 
 ## Endpoints
 

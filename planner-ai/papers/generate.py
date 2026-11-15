@@ -473,7 +473,7 @@ def generate_test(papers: list[dict], title: str = "", requested_marks: int | No
     generated: dict[str, dict] = {}
     if is_llm_available():
         questions = blueprint["structure"]["questions"]
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=1) as pool:
             futures = {pool.submit(_generate_question, subject, questions[q], q_slots): q for q, q_slots in by_question.items()}
             for future, q_index in futures.items():
                 try:

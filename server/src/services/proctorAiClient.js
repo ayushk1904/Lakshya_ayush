@@ -9,8 +9,7 @@ function serviceError(message, status = 502) {
   return error;
 }
 
-// A free Render instance sleeps after 15 idle minutes and answers 502/503 for about a minute
-// while it wakes. One /health request at a time starts it, without holding up frame requests.
+// Check proctor readiness without holding up frame requests.
 let wakeUp = null;
 let lastWarmAt = 0;
 

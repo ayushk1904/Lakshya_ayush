@@ -32,8 +32,7 @@ function buildEasyExplanationFallback(answer = "") {
   return ["## Easy Explanation", "", ...sentences.map((sentence) => `- ${sentence}`)].join("\n");
 }
 
-// Wakes the backend and both AI services (free Render instances sleep when idle) as soon as the
-// site opens, so they are ready by the time a feature is used.
+// Check backend and local AI service readiness as soon as the site opens.
 export function warmUpServices() {
   fetch(`${API_BASE_URL}/warmup`).catch(() => {});
 }

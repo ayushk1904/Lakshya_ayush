@@ -187,13 +187,9 @@ _ocr_engine = None
 
 
 def _cpu_threads() -> int:
-    """Threads the container's CPU quota really allows. A free Render instance gets 0.1 CPU but
-    sees every core of the host; ONNX Runtime's default of one thread per core then makes them
-    queue for the quota and OCR crawls. -1 (one per core) when there is no quota."""
+    """Respect container CPU quotas; use one thread per core when no quota is set."""
     if os.getenv("OCR_THREADS"):
         return int(os.environ["OCR_THREADS"])
-    if os.getenv("RENDER"):  # Render sets this; its free instances have a fraction of one CPU
-        return 1
     for path, parse in (
         ("/sys/fs/cgroup/cpu.max", lambda text: text.split()),
         ("/sys/fs/cgroup/cpu/cpu.cfs_quota_us", lambda text: [text.strip(), open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read()]),

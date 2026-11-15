@@ -11,7 +11,7 @@ import { fallbackChat } from "../data/demoData";
 import "./StudyHubPage.css";
 
 // Invite links must open the public site even when the app is running locally.
-const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL?.trim() || "https://lakshya-ayush.vercel.app").replace(/\/$/, "");
+const PUBLIC_APP_URL = (import.meta.env.VITE_PUBLIC_APP_URL?.trim() || window.location.origin).replace(/\/$/, "");
 
 function StudyHubPage() {
   const navigate = useNavigate();

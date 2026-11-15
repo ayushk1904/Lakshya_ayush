@@ -28,8 +28,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-# Share the backend's GROQ_API_KEY / GROQ_MODEL; a local planner-ai/.env can override them.
+# Local service settings take precedence over the shared root and backend settings.
 load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).parent.parent / "server" / ".env")
 
 from rag.llm import is_llm_available  # noqa: E402  (imports after env is loaded)
@@ -88,7 +89,7 @@ class PlanRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "planner-ai", "llm": "groq" if is_llm_available() else "disabled (rules only)"}
+    return {"status": "ok", "service": "planner-ai", "llm": "ollama" if is_llm_available() else "disabled (rules only)"}
 
 
 @app.post("/ingest", dependencies=[Depends(require_token)])

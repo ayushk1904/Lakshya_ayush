@@ -1,3 +1,4 @@
+const { getModel: getAiModel, generateText } = require("../services/ollamaClient");
 const crypto = require("crypto");
 const express = require("express");
 const mongoose = require("mongoose");
@@ -77,19 +78,6 @@ function serializeRoom(room) {
     onlineCount: Array.isArray(room.members) ? room.members.filter((member) => member.status === "online").length : 0,
     members: room.members || [],
     invites: room.invites || []
-  };
-}
-
-function getAiModel() {
-  const apiKey = process.env.GROQ_API_KEY;
-
-  if (!apiKey) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    model: process.env.GROQ_MODEL || "openai/gpt-oss-20b"
   };
 }
 
@@ -191,35 +179,6 @@ function normalizeAttachments(rawAttachments) {
     .slice(0, 6);
 }
 
-async function generateGroqText({ modelConfig, systemPrompt, userPrompt }) {
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    signal: AbortSignal.timeout(20000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${modelConfig.apiKey}`
-    },
-    body: JSON.stringify({
-      model: modelConfig.model,
-      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
-      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
-      temperature: 0.35,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Groq request failed");
-  }
-
-  return data?.choices?.[0]?.message?.content?.trim() || "";
-}
-
 function buildFallbackAiAnswer({ authorName, prompt }) {
   return [
     `${authorName}, here is my quick take on that.`,
@@ -295,7 +254,8 @@ async function maybeCreateAiReply({ room, author, text, attachments = [] }) {
         .map((message) => `${message.user?.name || "Student"}${message.user?.role === "ai" ? " [AI]" : ""}: ${message.text}`)
         .join("\n");
 
-      responseText = await generateGroqText({
+      responseText = await generateText({
+        maxTokens: 700,
         modelConfig: model,
         systemPrompt: `You are Lakshya's Study Hub AI.
 You are a friendly study partner inside a group room.

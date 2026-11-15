@@ -25,6 +25,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env")
 load_dotenv(Path(__file__).parent.parent / "server" / ".env")
 
 from vision import ProctorAnalyzer  # noqa: E402
@@ -32,7 +33,8 @@ from vision import ProctorAnalyzer  # noqa: E402
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("proctor-ai")
 # Hide OpenCV's "targets are not supported by the new graph engine" notice on every load.
-cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+if hasattr(cv2, "setLogLevel"):
+    cv2.setLogLevel(2)
 
 MODELS_DIR = Path(__file__).parent / "models"
 MAX_IMAGE_BYTES = 2 * 1024 * 1024

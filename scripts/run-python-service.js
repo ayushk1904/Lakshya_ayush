@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Starts a Python service with its own virtual environment when it has one, so packages such as
-// RapidOCR (planner-ai) or OpenCV (proctor-ai) are always found. Falls back to the system Python.
+// Uses the root virtual environment, then a service-specific one, then system Python.
 //
 // Usage: node scripts/run-python-service.js <service-dir> <port> [--reload]
 
@@ -17,18 +16,26 @@ if (!serviceDir || !port) {
 
 const root = path.resolve(__dirname, "..");
 const serviceRoot = path.join(root, serviceDir);
-const venvPython = process.platform === "win32"
+const servicePython = process.platform === "win32"
   ? path.join(serviceRoot, ".venv", "Scripts", "python.exe")
   : path.join(serviceRoot, ".venv", "bin", "python");
-const python = fs.existsSync(venvPython) ? venvPython : process.platform === "win32" ? "python" : "python3";
+const sharedPython = process.platform === "win32"
+  ? path.join(root, ".venv", "Scripts", "python.exe")
+  : path.join(root, ".venv", "bin", "python");
+const python = process.env.LAKSHYA_PYTHON || [sharedPython, servicePython].find((candidate) => fs.existsSync(candidate))
+  || (process.platform === "win32" ? "python" : "python3");
 
-const args = ["-m", "uvicorn", "main:app", "--app-dir", serviceDir, "--port", port];
+const args = ["-m", "uvicorn", "main:app", "--app-dir", serviceDir, "--host", "127.0.0.1", "--port", port];
 if (flags.includes("--reload")) {
   args.push("--reload", "--reload-dir", serviceDir);
 }
 
-console.log(`Starting ${serviceDir} on port ${port} with ${python === venvPython ? `${serviceDir}/.venv` : "system Python"}`);
+console.log(`Starting ${serviceDir} on port ${port} with ${python}`);
 const child = spawn(python, args, { cwd: root, stdio: "inherit" });
+child.on("error", (error) => {
+  console.error(`Could not start ${serviceDir}: ${error.message}`);
+  process.exit(1);
+});
 child.on("exit", (code) => process.exit(code ?? 0));
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => child.kill(signal));

@@ -1,6 +1,8 @@
 const cors = require("cors");
 const express = require("express");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
 const authRoutes = require("./routes/authRoutes");
 const answerEvaluatorRoutes = require("./routes/answerEvaluatorRoutes");
 const chatRoomRoutes = require("./routes/chatRoomRoutes");
@@ -11,6 +13,7 @@ const studyPlanRoutes = require("./routes/studyPlanRoutes");
 const studyPlannerRoutes = require("./routes/studyPlannerRoutes");
 const { warmPlanner } = require("./services/plannerAiClient");
 const { warmProctor } = require("./services/proctorAiClient");
+const { warmOllama, getOllamaStatus } = require("./services/ollamaClient");
 
 const app = express();
 const jsonBodyLimit = "8mb";
@@ -28,13 +31,20 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Called once when the website opens. Free Render instances sleep after 15 idle minutes and take
-// about a minute to wake, so the backend (by this request) and both AI services start waking while
-// the visitor is still on the landing or login page.
+// Check the local AI services when the website opens.
 app.get("/api/warmup", (_req, res) => {
   warmPlanner();
   warmProctor();
+  warmOllama().catch((error) => console.warn("Ollama warmup:", error.message));
   res.json({ ok: true });
+});
+
+app.get("/api/ai/status", async (_req, res) => {
+  try {
+    res.json(await getOllamaStatus());
+  } catch (_error) {
+    res.status(503).json({ available: false, loaded: false, message: "Start Ollama to enable AI features." });
+  }
 });
 
 app.use("/api/auth", authRoutes);
@@ -45,6 +55,14 @@ app.use("/api/concept-explainer", conceptExplainerRoutes);
 app.use("/api/chat-rooms", chatRoomRoutes);
 app.use("/api/exam-sessions", examSessionRoutes);
 app.use("/api/progress", progressRoutes);
+
+// Serve the built React app from the same address as the API for the ngrok tunnel.
+app.use("/api", (_req, res) => res.status(404).json({ message: "API route not found" }));
+const clientDist = path.resolve(__dirname, "../../client/dist");
+if (fs.existsSync(path.join(clientDist, "index.html"))) {
+  app.use(express.static(clientDist));
+  app.get("/{*path}", (_req, res) => res.sendFile(path.join(clientDist, "index.html")));
+}
 
 app.use((err, _req, res, _next) => {
   if (err?.type === "entity.too.large") {

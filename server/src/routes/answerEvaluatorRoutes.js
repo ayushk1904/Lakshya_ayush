@@ -1,3 +1,4 @@
+const { getModel, generateModelJson } = require("../services/ollamaClient");
 const express = require("express");
 const multer = require("multer");
 const { PDFParse } = require("pdf-parse");
@@ -8,58 +9,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function getModel() {
-  if (process.env.XAI_API_KEY) {
-    return {
-      provider: "xai",
-      apiKey: process.env.XAI_API_KEY,
-      baseUrl: "https://api.x.ai/v1/chat/completions",
-      model: process.env.XAI_MODEL || "grok-4-1-fast-reasoning"
-    };
-  }
-
-  if (process.env.GROQ_API_KEY) {
-    return {
-      provider: "groq",
-      apiKey: process.env.GROQ_API_KEY,
-      baseUrl: "https://api.groq.com/openai/v1/chat/completions",
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-20b"
-    };
-  }
-
-  return null;
-}
-
-async function generateModelJson({ modelConfig, systemPrompt, userPrompt, temperature = 0.2 }) {
-  const response = await fetch(modelConfig.baseUrl, {
-    method: "POST",
-    signal: AbortSignal.timeout(30000),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${modelConfig.apiKey}`
-    },
-    body: JSON.stringify({
-      model: modelConfig.model,
-      // gpt-oss thinks at "medium" by default; "low" answers about twice as fast with the same quality here.
-      ...(String(modelConfig.model).startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}),
-      temperature,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    })
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `${modelConfig.provider} request failed`);
-  }
-
-  return JSON.parse(data?.choices?.[0]?.message?.content || "{}");
 }
 
 async function extractDocumentText(file) {
@@ -167,6 +116,7 @@ router.post(
 
       try {
         const evaluation = await generateModelJson({
+          maxTokens: 1100,
           modelConfig: model,
           systemPrompt: `You are Lakshya AI, an exam answer evaluator.
 Compare a student's solution with a topper's solution and return valid JSON only.
